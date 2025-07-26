@@ -35,14 +35,10 @@ gazebo_config:
   gui: true       
   real_time_factor: 1.0  # Real-time factor for simulation speed
   step_size: 0.001       # Physics step size in seconds
-  timeout: 30.0          # Startup timeout in seconds
+  timeout: 15.0          # Startup timeout in seconds
   verbose: false         # Verbosity level
 
 
-# # MavSDK configuration
-# mavsdk_config:
-#   system_address: "udp://0.0.0.0:14550"
-#   timeout: 10.0
 
 # # Environment configuration
 # environment_config:

@@ -47,17 +47,7 @@ The environment should be ready. For now, troubleshoot the requirements manually
 
 This guide will help you run a basic drone simulation using Ardupilot SITL and Gazebo.
 
-### Step 1: Start Gazebo Simulation
-Open 2 terminals.
-First, start the Gazebo simulation with our minimal world:
-
-```bash
-# Start Gazebo with the simple world
-gz sim -v4 -r simple_world.sdf    
-```
-### Step 2: Start Ardupilot SITL
-
-In a new terminal, run:
+In a terminal, run:
 
 ```bash
 # Run SITL with Gazebo integration

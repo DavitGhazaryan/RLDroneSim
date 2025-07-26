@@ -4,22 +4,25 @@ Smoke tests for real ArduPilot SITL launch and basic operations without test fra
 Requires: ArduPilot repository cloned and environment set up.
 Set ARDUPILOT_DIR env var to your ArduPilot path, or edit the hardcoded path below.
 """
+import argparse
 import os
 import sys
 import time
 import asyncio
+from pathlib import Path
+import yaml
 
 import os
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 
 # adjust this path to point at your cloned ArduPilot dir
 ARDUPILOT_DIR = "/home/student/Dev/pid_rl/ardupilot"
-
-# add your package root so we can import ArduPilotSITL
 sys.path.append(str(os.path.dirname(__file__)))
 
 from rl_training.utils.ardupilot_sitl import ArduPilotSITL
+from rl_training.utils.gazebo_interface import GazeboInterface
 
 
 async def mavsdk_task(sitl: ArduPilotSITL):
@@ -59,42 +62,105 @@ async def mavsdk_task(sitl: ArduPilotSITL):
     # await asyncio.sleep(15.0)
 
 
-def main():
-    # config = {
-    #     "ardupilot_path": ARDUPILOT_DIR,
-    #     "vehicle":        "ArduCopter",
-    #     "frame":          "quad",
-    #     "timeout":        60.0,
-    #     "min_startup_delay": 5.0,
-    #     # optional: override ports if you like
-    #     # "master_port": 14550,
-    #     # "mavsdk_port": 14551,
-    # }
+def load_config(config_path):
+    """Load configuration from YAML file."""
+    if not config_path or not Path(config_path).exists():
+        print(f"⚠️  Config file not found: {config_path}")
+        print("Using default configuration...")
+        return get_default_config()
+    
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        return config
+    except Exception as e:
+        print(f"❌ Error loading config file: {e}")
+        print("Using default configuration...")
+        return get_default_config()
 
-    config = {
-        "ardupilot_path": ARDUPILOT_DIR,
-        "vehicle":        "ArduCopter",
-        "frame":          "gazebo-iris",
-        "model":          "JSON",
-        "timeout":        60.0,
-        "min_startup_delay": 5.0,
-        # optional: override ports if you like
-        # "master_port": 14550,
-        # "mavsdk_port": 14551,
+
+def get_default_config():
+    """Return default Gazebo configuration."""
+    return {
+        'ardupilot_config': {
+            'ardupilot_path': ARDUPILOT_DIR,
+            'vehicle': 'ArduCopter',
+            'frame': 'gazebo-iris',
+            'model': 'JSON',
+            'timeout': 60.0
+        },
+        'gazebo_config': {
+            'sdf_file': '/home/student/Dev/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf',
+            'gui': 'DISPLAY' in os.environ,
+            'verbose': True,
+            'timeout': 15.0
+        }
     }
 
-    sitl = ArduPilotSITL(config)
-    print("Starting SITL...")
-    sitl.start_sitl()
 
+def main():
+
+    parser = argparse.ArgumentParser(description='Test SITL workflow')
+    parser.add_argument('--config', '-c', type=str, 
+                       default='rl_training/configs/default_config.yaml',
+                       help='Path to configuration YAML file')
+    args = parser.parse_args()
+
+    print(f"📋 Loading configuration from: {args.config}")
+    
+    config = load_config(args.config)
+
+    gazebo = GazeboInterface(config['gazebo_config'])
+    sitl = ArduPilotSITL(config['ardupilot_config'])
     try:
-        # run all MAVSDK ops in asyncio
-        asyncio.run(mavsdk_task(sitl))
-    except Exception as e:
-        print(f"Error during MAVSDK operations: {e}")
+
+        # start Gazebo
+        print("🌎 Launching Gazebo simulation...")
+        gazebo.start_simulation()
+        gazebo._wait_for_startup()
+        gazebo.resume_simulation()
+        print("✅ Gazebo initialized")
+
+        # start SITL
+        print("🚁 Starting ArduPilot SITL...")
+        sitl.start_sitl()
+        info = sitl.get_process_info()
+        print(f"✅ SITL running (PID {info['pid']})")
+
+        print("\n▶️  Both SITL and Gazebo are up. Press Ctrl+C to terminate.")
+
+        try:
+            asyncio.run(mavsdk_task(sitl))
+        except Exception as e:
+            if "KeyboardInterrupt" in str(e):
+                print("🛑 Interrupted by user. Cleaning up...")
+                raise e
+            else:
+                print(f"Error during MAVSDK operations: {e}")
+        finally:
+            print("Stopping SITL...")
+            sitl.stop_sitl()
+
+    except KeyboardInterrupt:
+        print("\n🛑 Interrupted by user. Cleaning up...")
+
     finally:
+        # teardown
+        print("Stopping Gazebo...")
+        try:
+            gazebo.close()
+            print("Gazebo stopped.")
+        except Exception:
+            pass
+
         print("Stopping SITL...")
-        sitl.stop_sitl()
+        try:
+            sitl.close()
+            print("SITL stopped.")
+        except Exception:
+            pass
+
+        print("✅ Integration test complete.")
 
 
 if __name__ == "__main__":
