@@ -24,7 +24,7 @@ from mavsdk import System
 from mavsdk.offboard import PositionNedYaw
 from mavsdk.param import Param
 
-logger = logging.getLogger("ArduPilotSITL")
+logger = logging.getLogger("SITL")
 logging.basicConfig(level=logging.INFO)
 
 class ArduPilotSITL:

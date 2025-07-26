@@ -21,12 +21,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 ARDUPILOT_DIR = "/home/student/Dev/pid_rl/ardupilot"
 sys.path.append(str(os.path.dirname(__file__)))
 
-from rl_training.environments.ardupilot_env import ArdupilotEnv
+from rl_training.utils.ardupilot_sitl import ArduPilotSITL
+from rl_training.utils.gazebo_interface import GazeboInterface
 
 
-async def mavsdk_task(env: ArdupilotEnv):
+async def mavsdk_task(sitl: ArduPilotSITL):
     # get or establish MAVSDK System
-    drone = await env.sitl._get_mavsdk_connection()
+    drone = await sitl._get_mavsdk_connection()
 
     # wait until armable (and has GPS fix)
     print("Waiting for vehicle to become armable...")
@@ -55,7 +56,7 @@ async def mavsdk_task(env: ArdupilotEnv):
 
     # hover for 5 s
     await asyncio.sleep(15.0)
-    await env.sitl.reset_async(keep_params=True)
+    await sitl.reset_async(keep_params=True)
 
     await asyncio.sleep(15.0)
     # await asyncio.sleep(15.0)
@@ -107,18 +108,63 @@ def main():
     print(f"📋 Loading configuration from: {args.config}")
     
     config = load_config(args.config)
-    env = ArdupilotEnv(config)
-    env.reset()
+
+    gazebo = GazeboInterface(config['gazebo_config'])
+    sitl = ArduPilotSITL(config['ardupilot_config'])
     try:
-        asyncio.run(mavsdk_task(env))
-    except Exception as e:
-        if "KeyboardInterrupt" in str(e):
-            print("🛑 Interrupted by user. Cleaning up...")
-            raise e
-        else:
-            print(f"Error during MAVSDK operations: {e}")
+
+        # start Gazebo
+        print("🌎 Launching Gazebo simulation...")
+        gazebo.start_simulation()
+        gazebo._wait_for_startup()
+        gazebo.resume_simulation()
+        print("✅ Gazebo initialized")
+
+        # start SITL
+        print("🚁 Starting ArduPilot SITL...")
+        sitl.start_sitl()
+        info = sitl.get_process_info()
+        print(f"✅ SITL running (PID {info['pid']})")
+
+        print("\n▶️  Both SITL and Gazebo are up. Press Ctrl+C to terminate.")
+
+        try:
+            asyncio.run(mavsdk_task(sitl))
+        except Exception as e:
+            if "KeyboardInterrupt" in str(e):
+                print("🛑 Interrupted by user. Cleaning up...")
+                raise e
+            else:
+                print(f"Error during MAVSDK operations: {e}")
+        finally:
+            print("Stopping SITL...")
+            sitl.stop_sitl()
+            print("Stopping Gazebo...")
+            gazebo.stop_simulation()
+            print("✅ Gazebo stopped.")
+            print("✅ SITL stopped.")
+
+    except KeyboardInterrupt:
+        print("\n🛑 Interrupted by user. Cleaning up...")
+
     finally:
-        env.close()
+        # teardown
+        print("Stopping Gazebo...")
+        try:
+            gazebo.close()
+            print("Gazebo stopped.")
+        except Exception:
+            print("Failed to stop Gazebo.")
+            pass
+
+        print("Stopping SITL...")
+        try:
+            sitl.close()
+            print("SITL stopped.")
+        except Exception:
+            print("Failed to stop SITL.")
+            pass
+
         print("✅ Integration test complete.")
 
 
