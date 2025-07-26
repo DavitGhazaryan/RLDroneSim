@@ -1,0 +1,128 @@
+# Default configuration for Ardupilot RL training
+
+
+# ArduPilot SITL configuration
+ardupilot_config:
+  ardupilot_path: "/home/student/Dev/pid_rl/ardupilot"           # Path to ArduPilot directory
+  vehicle: "ArduCopter"                                          # Vehicle type (copter, plane, rover)
+  frame: "gazebo-iris"                                           # Vehicle model for Gazebo integration
+  
+  # optional
+  instance:  null                                                # Instance number
+  count: null                                                    # Number of instances
+  location: null                                                 # Home location lat,lon,alt,yaw
+  speedup: null                                                  # Simulation speed multiplier
+  wipe_eeprom: false                                             # Wipe EEPROM on startup
+  use_dir: null                                                  # Use directory for SITL
+  delay_start: null                                              # Delay startup by this many seconds
+  model: "JSON"                                                  # Vehicle model for Gazebo integration
+  clean: true                                                    # clean build
+  no_rebuild: true                                               # don't rebuild
+  no_configure: true                                             # don't configure
+  no_mavproxy: false                                             # Don't launch MAVProxy
+  udp: true                                                      # Use UDP for communication
+  map: false                                                     # Use map for navigation
+  console: false                                                 # Use console for debugging
+  mavproxy_args: null                                            # Additional MAVProxy arguments
+  timeout: 30.0                                                  # SITL startup timeout
+  min_startup_delay: 5.0                                         # Assume ready after this many seconds
+  mavsdk_port: 14550                                             # MAVSDK connection port 
+  master_port: 14551                                             # MAVLink master port for low level communication (same as udp_out)
+
+# Gazebo configuration
+gazebo_config:
+  sdf_file: '/home/student/Dev/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  
+  gui: true       
+  real_time_factor: 1.0  # Real-time factor for simulation speed
+  step_size: 0.001       # Physics step size in seconds
+  timeout: 30.0          # Startup timeout in seconds
+  verbose: false         # Verbosity level
+
+
+# # MavSDK configuration
+# mavsdk_config:
+#   system_address: "udp://0.0.0.0:14550"
+#   timeout: 10.0
+
+# # Environment configuration
+# environment_config:
+#   max_episode_steps: 1000
+#   observation_space: "position_velocity_attitude"
+#   action_space: "throttle_roll_pitch_yaw"
+#   reward_function: "hover"
+
+# # TD3 algorithm parameters
+# td3_params:
+#   learning_rate: 1e-3
+#   buffer_size: 1000000
+#   learning_starts: 100
+#   batch_size: 100
+#   tau: 0.005
+#   gamma: 0.99
+#   train_freq: 1
+#   gradient_steps: 1
+#   action_noise: null
+#   target_policy_noise: 0.2
+#   target_noise_clip: 0.5
+#   policy_delay: 2
+#   tensorboard_log: null
+#   policy_kwargs: null
+#   verbose: 0
+#   seed: null
+#   device: "auto"
+#   _init_setup_model: true
+
+# # Training configuration
+# training_config:
+#   total_timesteps: 1000000
+#   eval_freq: 10000
+#   save_freq: 50000
+#   log_freq: 1000
+#   tensorboard_log_dir: "./logs"
+#   checkpoint_dir: "./checkpoints"
+
+# # Callbacks configuration
+# callbacks:
+#   - type: "logging"
+#     log_freq: 1000
+#   - type: "evaluation"
+#     eval_freq: 10000
+#     n_eval_episodes: 10
+#   - type: "tensorboard"
+#     log_dir: "./logs"
+#   - type: "checkpoint"
+#     save_freq: 50000
+#     save_path: "./checkpoints"
+
+# # Reward function configuration
+# reward_config:
+#   hover:
+#     target_position: [0.0, 0.0, 10.0]
+#     position_weight: 1.0
+#     velocity_weight: 0.1
+#     attitude_weight: 0.5
+#     action_weight: 0.01
+#     crash_penalty: -100.0
+  
+#   waypoint:
+#     waypoints: [[10.0, 0.0, 10.0], [0.0, 10.0, 10.0], [0.0, 0.0, 10.0]]
+#     position_weight: 1.0
+#     velocity_weight: 0.1
+#     waypoint_reached_reward: 100.0
+#     crash_penalty: -100.0
+#     waypoint_threshold: 5.0
+  
+#   pid_tuning:
+#     setpoint: [0.0, 0.0, 10.0, 0.0]
+#     error_weight: 1.0
+#     overshoot_penalty: 0.5
+#     settling_time_weight: 0.1
+#     crash_penalty: -100.0
+#     settling_threshold: 0.1
+
+# # Evaluation configuration
+# evaluation_config:
+#   n_eval_episodes: 10
+#   deterministic: true
+#   save_results: true
+#   plot_results: true 
