@@ -40,12 +40,12 @@ gazebo_config:
 
 
 
-# # Environment configuration
-# environment_config:
-#   max_episode_steps: 1000
-#   observation_space: "position_velocity_attitude"
-#   action_space: "throttle_roll_pitch_yaw"
-#   reward_function: "hover"
+# Environment configuration
+environment_config:
+  max_episode_steps: 100
+  observation_space: "position_velocity_attitude" # list any that you want to observe
+  action_space: "throttle_roll_pitch_yaw" # list any that you want to control
+  reward_function: "hover" # list any that you want to use
 
 # # TD3 algorithm parameters
 # td3_params:

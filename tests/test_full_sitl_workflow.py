@@ -16,6 +16,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+from rl_training.utils.utils import load_config
 
 # adjust this path to point at your cloned ArduPilot dir
 ARDUPILOT_DIR = "/home/student/Dev/pid_rl/ardupilot"
@@ -23,10 +24,12 @@ sys.path.append(str(os.path.dirname(__file__)))
 
 from rl_training.environments.ardupilot_env import ArdupilotEnv
 
-
 async def mavsdk_task(env: ArdupilotEnv):
     # get or establish MAVSDK System
     drone = await env.sitl._get_mavsdk_connection()
+
+    pid_params = await env.sitl.get_pid_params_async()
+    print(f"Initial PID params: {pid_params}")
 
     # wait until armable (and has GPS fix)
     print("Waiting for vehicle to become armable...")
@@ -47,7 +50,12 @@ async def mavsdk_task(env: ArdupilotEnv):
     print("Taking off to 5 m...")
     await drone.action.takeoff()
 
-    await asyncio.sleep(15.0)
+    await asyncio.sleep(5.0)
+
+    await env.sitl.set_params_async()
+
+    await asyncio.sleep(5.0)
+
 
     # land
     # print("Landing...")
@@ -55,46 +63,9 @@ async def mavsdk_task(env: ArdupilotEnv):
 
     # hover for 5 s
     await asyncio.sleep(15.0)
-    await env.sitl.reset_async(keep_params=True)
+    # await env.sitl.reset_async(keep_params=True)
 
-    await asyncio.sleep(15.0)
     # await asyncio.sleep(15.0)
-
-
-def load_config(config_path):
-    """Load configuration from YAML file."""
-    if not config_path or not Path(config_path).exists():
-        print(f"⚠️  Config file not found: {config_path}")
-        print("Using default configuration...")
-        return get_default_config()
-    try:
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-        return config
-    except Exception as e:
-        print(f"❌ Error loading config file: {e}")
-        print("Using default configuration...")
-        return get_default_config()
-
-
-def get_default_config():
-    """Return default Gazebo configuration."""
-    return {
-        'ardupilot_config': {
-            'ardupilot_path': ARDUPILOT_DIR,
-            'vehicle': 'ArduCopter',
-            'frame': 'gazebo-iris',
-            'model': 'JSON',
-            'timeout': 60.0
-        },
-        'gazebo_config': {
-            'sdf_file': '/home/student/Dev/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf',
-            'gui': 'DISPLAY' in os.environ,
-            'verbose': True,
-            'timeout': 15.0
-        }
-    }
-
 
 def main():
 

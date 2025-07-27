@@ -762,6 +762,36 @@ class ArduPilotSITL:
         """
         return asyncio.run(self.reset_async(keep_params))
 
+    async def set_params_async(self, pid_params):
+        drone = await self._get_mavsdk_connection()
+        # Set large values for the PID parameters to destabilize the drone
+        await self.set_pid_param_async(drone, "ATC_ANG_PIT_P", pid_params[0])  # Large value for Pitch Proportional
+        await self.set_pid_param_async(drone, "ATC_ANG_RLL_P", pid_params[1])  # Large value for Roll Proportional
+        await self.set_pid_param_async(drone, "ATC_ANG_YAW_P", pid_params[2])  # Large value for Yaw Proportional
+
+        await self.set_pid_param_async(drone, "ATC_RAT_PIT_P", pid_params[3])  # Large value for Rate Pitch Proportional
+        await self.set_pid_param_async(drone, "ATC_RAT_RLL_P", pid_params[4])  # Large value for Rate Roll Proportional
+        await self.set_pid_param_async(drone, "ATC_RAT_YAW_P", pid_params[5])  # Large value for Rate Yaw Proportional
+
+    async def set_pid_param_async(self, drone, param_name, value):
+        print(f"Setting {param_name} to {value}")
+        await drone.param.set_param_float(param_name, value)
+    
+    async def get_pid_param_async(self, drone, param_name):
+        print(f"Getting {param_name}")
+        return await drone.param.get_param_float(param_name)
+
+    async def get_pid_params_async(self):
+        drone = await self._get_mavsdk_connection()
+        return {
+            "ATC_ANG_PIT_P": await self.get_pid_param_async(drone, "ATC_ANG_PIT_P"),
+            "ATC_ANG_RLL_P": await self.get_pid_param_async(drone, "ATC_ANG_RLL_P"),
+            "ATC_ANG_YAW_P": await self.get_pid_param_async(drone, "ATC_ANG_YAW_P"),
+            "ATC_RAT_PIT_P": await self.get_pid_param_async(drone, "ATC_RAT_PIT_P"),
+            "ATC_RAT_RLL_P": await self.get_pid_param_async(drone, "ATC_RAT_RLL_P"),
+            "ATC_RAT_YAW_P": await self.get_pid_param_async(drone, "ATC_RAT_YAW_P"),
+        }
+
     def is_running(self) -> bool:
         return bool(self.process and self.process.poll() is None)
 
@@ -822,7 +852,6 @@ class ArduPilotSITL:
             info['current_mode'] = current_mode
             
         return info
-
 
     def _cleanup_on_exit(self):
         if self.is_running():
