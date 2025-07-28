@@ -142,7 +142,9 @@ class ArdupilotEnv(gym.Env):
 if __name__ == "__main__":
     config = load_config('/home/student/Dev/pid_rl/rl_training/configs/default_config.yaml')
     env = ArdupilotEnv(config)
+
     env.reset()
-    env.step(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
-    env.step(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
+    env.step(np.array([0.3, 0.3, 0.3, 0.3, 0.3, 0.3]))
+    env.step(np.array([0.0, 0.2, 0.2, 0.2, 0.2, 0.2]))
+
     env.close()

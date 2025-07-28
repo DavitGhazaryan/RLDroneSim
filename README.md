@@ -28,29 +28,64 @@ pid_rl/
 
 ## Setup
 
-Dependency resolution is not yet finalized.
+This project uses Docker for easy deployment and consistent environment setup. The configuration has been tested on Linux host machines with NVIDIA GPU support.
 
-So far the system was tested on Linux. The setup should be automated.
+### Prerequisites
 
-1. Clone the repository.
-2. Setup Ardupilot https://ardupilot.org/dev/docs/building-setup-linux.html#building-setup-linux
-     it should be next to rl_training folder.
-3. Make sure that SITL works https://ardupilot.org/dev/docs/setting-up-sitl-on-linux.html
-4. Setup ardupilot-gazebo plugin https://ardupilot.org/dev/docs/sitl-with-gazebo.html
-    Make sure the paths are written correctly.   It should be next to rl_training folder.
-5. Copy the simple_world.sdf to ardupilot_gazebo/worlds/simple_world.sdf 
+- Docker and Docker Compose installed
+- NVIDIA GPU with compatible drivers (for GPU acceleration)
+- Linux host machine (recommended)
+- X11 server access for GUI applications
 
-The environment should be ready. For now, troubleshoot the requirements manually.
+### Installation Steps
 
+1. **Clone the repository**
+   ```bash
+   git clone git@github.com:GorArzanyanAUA/pid_rl.git
+   cd pid_rl
+   ```
 
-## Quick Start: Simple Drone Test
+2. **Configure X11 access for GUI applications**
+   ```bash
+   xhost +local:docker
+   ```
 
-This guide will help you run a basic drone simulation using Ardupilot SITL and Gazebo.
+3. **Build the Docker container**
+   ```bash
+   DOCKER_BUILDKIT=1 docker-compose build
+   ```
 
-In a terminal, run:
+4. **Start the container in detached mode**
+   ```bash
+   docker-compose up -d
+   ```
 
-```bash
-# Run SITL with Gazebo integration
-python3 pid_rl/tests/test_full_sitl_workflow.py
+5. **Enter the container**
+   ```bash
+   docker exec -it pid_rl_container bash
+   ```
 
-```
+### Verification Tests
+
+Once inside the container, run these tests to verify the setup:
+
+1. **Test GPU access (if GPU is available)**
+   ```bash
+   nvidia-smi
+   ```
+
+2. **Test Gazebo GUI**
+   ```bash
+   gz sim simple_world.sdf
+   ```
+
+3. **Test complete SITL workflow**
+   ```bash
+   python3 tests/test_full_sitl_workflow.py
+   ```
+
+### Troubleshooting
+
+- **Different host OS**: The Dockerfile should work on any machine, but you may need to modify `docker-compose.yml` for non-Linux systems
+- **GPU compatibility**: If you encounter CUDA version issues, update the CUDA version in the Dockerfile to match your GPU
+- **GUI issues**: Ensure X11 forwarding is properly configured for your system

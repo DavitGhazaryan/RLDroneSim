@@ -25,6 +25,7 @@ class GazeboInterface:
         self.is_started = False
         
         self.sdf_file = config.get('sdf_file', None)
+        print(f"SDF file: {self.sdf_file}")
         self.world_name = self._parse_world_name(self.sdf_file)
 
         if self.sdf_file and not os.path.exists(self.sdf_file):
