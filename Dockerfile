@@ -116,7 +116,7 @@
     WORKDIR /home/pid_rl/ardupilot
     RUN  git config --global --add safe.directory /home/pid_rl/ardupilot
     RUN ./waf configure --board sitl && \
-        ./waf copter plane rover -j$(nproc)
+        ./waf copter -j$(nproc)
     
     RUN echo 'export PATH="$PATH:$HOME/.local/bin"' >> ~/.bashrc
 
