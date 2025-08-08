@@ -230,61 +230,61 @@ class GazeboInterface:
             logger.warning(f"⚠️  Failed to get simulation time: {e}")
             return -1.0
 
-    def get_model_pose(self, model_name: str) -> Dict[str, float]:
-        import math
-        """
-        Get the pose of a model from /world/<world_name>/pose/info topic.
+    # def get_model_pose(self, model_name: str) -> Dict[str, float]:
+    #     import math
+    #     """
+    #     Get the pose of a model from /world/<world_name>/pose/info topic.
 
-        Don't use this function for reward calculation as you have GPS.
-        """
-        try:
-            output = subprocess.check_output(
-                [
-                    "gz", "topic", "-e",
-                    "-n", "1",  # receive only 1 message
-                    "--topic", f"/world/{self.world_name}/pose/info"
-                ],
-                timeout=5
-            )
-            msg = json.loads(output.decode("utf-8"))
-            for pose in msg.get("pose", []):
-                if pose.get("name") == model_name:
-                    pos = pose["position"]
-                    rot = pose["orientation"]
+    #     Don't use this function for reward calculation as you have GPS.
+    #     """
+    #     try:
+    #         output = subprocess.check_output(
+    #             [
+    #                 "gz", "topic", "-e",
+    #                 "-n", "1",  # receive only 1 message
+    #                 "--topic", f"/world/{self.world_name}/pose/info"
+    #             ],
+    #             timeout=5
+    #         )
+    #         msg = json.loads(output.decode("utf-8"))
+    #         for pose in msg.get("pose", []):
+    #             if pose.get("name") == model_name:
+    #                 pos = pose["position"]
+    #                 rot = pose["orientation"]
 
-                    # Quaternion → Euler
-                    qx, qy, qz, qw = rot["x"], rot["y"], rot["z"], rot["w"]
+    #                 # Quaternion → Euler
+    #                 qx, qy, qz, qw = rot["x"], rot["y"], rot["z"], rot["w"]
 
-                    t0 = +2.0 * (qw * qx + qy * qz)
-                    t1 = +1.0 - 2.0 * (qx * qx + qy * qy)
-                    roll = math.atan2(t0, t1)
+    #                 t0 = +2.0 * (qw * qx + qy * qz)
+    #                 t1 = +1.0 - 2.0 * (qx * qx + qy * qy)
+    #                 roll = math.atan2(t0, t1)
 
-                    t2 = +2.0 * (qw * qy - qz * qx)
-                    t2 = max(min(t2, 1.0), -1.0)
-                    pitch = math.asin(t2)
+    #                 t2 = +2.0 * (qw * qy - qz * qx)
+    #                 t2 = max(min(t2, 1.0), -1.0)
+    #                 pitch = math.asin(t2)
 
-                    t3 = +2.0 * (qw * qz + qx * qy)
-                    t4 = +1.0 - 2.0 * (qy * qy + qz * qz)
-                    yaw = math.atan2(t3, t4)
+    #                 t3 = +2.0 * (qw * qz + qx * qy)
+    #                 t4 = +1.0 - 2.0 * (qy * qy + qz * qz)
+    #                 yaw = math.atan2(t3, t4)
 
-                    return {
-                        "x": pos["x"],
-                        "y": pos["y"],
-                        "z": pos["z"],
-                        "roll": roll,
-                        "pitch": pitch,
-                        "yaw": yaw
-                    }
+    #                 return {
+    #                     "x": pos["x"],
+    #                     "y": pos["y"],
+    #                     "z": pos["z"],
+    #                     "roll": roll,
+    #                     "pitch": pitch,
+    #                     "yaw": yaw
+    #                 }
 
-            logger.warning(f"Model '{model_name}' not found in pose info.")
-            return {}
+    #         logger.warning(f"Model '{model_name}' not found in pose info.")
+    #         return {}
 
-        except subprocess.TimeoutExpired:
-            logger.error("Timeout while querying model pose.")
-            return {}
-        except Exception as e:
-            logger.error(f"Failed to get model pose: {e}")
-            return {}
+    #     except subprocess.TimeoutExpired:
+    #         logger.error("Timeout while querying model pose.")
+    #         return {}
+    #     except Exception as e:
+    #         logger.error(f"Failed to get model pose: {e}")
+    #         return {}
 
     def close(self):
         self.stop_simulation()

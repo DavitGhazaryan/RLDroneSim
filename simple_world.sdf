@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <sdf version="1.10">
-  <world name="iris_runway">
+  <world name="simple_world">
 
     <!-- Physics engine -->
     <physics name="1ms" type="ode">

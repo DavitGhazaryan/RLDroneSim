@@ -68,63 +68,28 @@ async def mavsdk_task(env: ArdupilotEnv):
     pid_params = await env.sitl.get_pid_params_async()
     print(f"Initial PID params: {pid_params}")
 
-    # wait until armable (and has GPS fix)
-    print("Waiting for vehicle to become armable...")
-    async for health in drone.telemetry.health():
-        if health.is_armable and health.is_global_position_ok:
-            print("Vehicle is armable and has GPS fix!")
-            break
-        await asyncio.sleep(1)
-
-
-
-    # await upload_mission(drone)
-
-    # arm
-    print("Arming...")
-    await drone.action.arm()
-
-
-    await asyncio.sleep(1)
-
-    # takeoff to 5 m
-    print("Taking off to 5 m...")
-    await drone.action.takeoff()
-
     await asyncio.sleep(5.0)
-
-    # await env.sitl.set_params_async()
-
-    await asyncio.sleep(5.0)
-
 
     # land
-    # print("Landing...")
+    print("Landing...")
     await drone.action.land()
 
-    # hover for 5 s
-    await asyncio.sleep(15.0)
-    # await env.sitl.reset_async(keep_params=True)
-
-    # await asyncio.sleep(15.0)
-
 def main():
-
-    parser = argparse.ArgumentParser(description='Test SITL workflow')
-    parser.add_argument('--config', '-c', type=str, 
-                       default='/home/pid_rl/rl_training/configs/default_config.yaml',
-                       help='Path to configuration YAML file')
-    args = parser.parse_args()
-
-    print(f"📋 Loading configuration from: {args.config}")
-    
-    config = load_config(args.config)
-    env = ArdupilotEnv(config)
-    env.reset()
-
-
-
     try:
+
+        parser = argparse.ArgumentParser(description='Test SITL workflow')
+        parser.add_argument('--config', '-c', type=str, 
+                        default='/home/pid_rl/rl_training/configs/default_config.yaml',
+                        help='Path to configuration YAML file')
+        args = parser.parse_args()
+
+        print(f"📋 Loading configuration from: {args.config}")
+        
+        config = load_config(args.config)
+        
+        env = ArdupilotEnv(config)
+        env.reset()
+
         asyncio.run(mavsdk_task(env))
     except Exception as e:
         if "KeyboardInterrupt" in str(e):
@@ -134,7 +99,6 @@ def main():
             print(f"Error during MAVSDK operations: {e}")
     finally:
         env.close()
-        print("✅ Integration test complete.")
 
 
 if __name__ == "__main__":

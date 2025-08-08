@@ -57,6 +57,8 @@
         autoconf \
         && rm -rf /var/lib/apt/lists/*
 
+
+        
     # Install additional dependencies for ArduPilot-Gazebo plugin
     RUN apt-get update && apt-get install -y \
         libgz-sim8-dev \
@@ -110,7 +112,7 @@
 
     # Install Python packages
     RUN pip3 install --upgrade pip && \
-        pip3 install numpy matplotlib==3.10.0 scipy pandas mavsdk gymnasium mavproxy==1.8.71 protobuf==5.29.0
+        pip3 install numpy matplotlib==3.10.0 scipy pandas mavsdk gymnasium mavproxy==1.8.71 protobuf==5.29.0 
 
     # Build ArduPilot SITL targets (copter, plane, rover)
     WORKDIR /home/pid_rl/ardupilot

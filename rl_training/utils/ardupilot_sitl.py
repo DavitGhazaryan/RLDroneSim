@@ -28,6 +28,14 @@ logger = logging.getLogger("SITL")
 logging.basicConfig(level=logging.INFO)
 
 class ArduPilotSITL:
+    """
+    Implements the Synchronous interface for Ardupilot SITL.
+    Async methods are not hidden.
+    set_mode()
+    check_is_armable()
+    reset()
+    """
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.process: Optional[subprocess.Popen] = None
@@ -86,6 +94,446 @@ class ArduPilotSITL:
         atexit.register(self._cleanup_on_exit)
         self._validate_paths()
 
+    def start_sitl(self):
+        if self.is_running():
+            raise RuntimeError("SITL already running")
+        cmd = self._build_command()
+        logger.info(f"Launching SITL: {' '.join(cmd)}")
+
+        self.process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            preexec_fn=os.setsid, cwd=str(self.ardupilot_path)
+        )
+        self._shutdown_event.clear()  # set to False, enables logging threads to run
+        self._start_log_threads()
+        self._wait_for_startup()      # ensures that the process is running and the port(s) are available
+        self._track_child_processes()
+
+
+        ### establish connections
+        logger.info("Establishing connections...")
+        self._get_mavlink_connection()
+        logger.info("MAVLink connection established")
+
+        try:
+            self._set_mode_sync('GUIDED')
+        except Exception as e:
+            logger.warning(f"Error setting GUIDED mode after startup: {e}")
+        logger.info("SITL started successfully.")
+
+    # Mode Setting
+    def set_mode(self, mode_name: str, timeout: float = 10.0) -> bool:
+        """
+        General method to set any flight mode using pymavlink.
+        Uses thread executor to avoid blocking if called from async context.
+        
+        Args:
+            mode_name: Name of the mode (e.g., 'GUIDED', 'STABILIZE', 'LOITER', 'RTL', etc.)
+            timeout: Timeout in seconds to wait for mode change confirmation
+        Returns:
+            bool: True if mode change was successful, False otherwise
+        """
+        if not self.is_running():
+            logger.error("SITL not running, cannot set mode")
+            return False
+        logger.info(f"Starting mode change to {mode_name}")
+        # Check if we're in an async context
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context - use executor to avoid blocking
+            future = asyncio.run_coroutine_threadsafe(
+                self._set_mode_async(mode_name, timeout), 
+                loop
+            )
+            return future.result(timeout=timeout + 5.0)  # Extra buffer for executor overhead
+        except RuntimeError:
+            # No running event loop - safe to call sync version
+            return self._set_mode_sync(mode_name, timeout)
+
+    async def _set_mode_async(self, mode_name: str, timeout: float = 10.0) -> bool:
+        """
+        Async mode setting method that doesn't block event loop.
+        
+        Args:
+            mode_name: Name of the mode
+            timeout: Timeout in seconds
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self.is_running():
+            logger.error("SITL not running, cannot set mode")
+            return False
+            
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self._thread_executor, 
+            self._set_mode_sync, 
+            mode_name, 
+            timeout
+        )
+
+    def _set_mode_sync(self, mode_name: str, timeout: float = 10.0) -> bool:
+        """
+        Synchronous mode setting using pymavlink (for use in thread executor).
+        
+        Args:
+            mode_name: Name of the mode
+            timeout: Timeout in seconds
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            master = self._get_mavlink_connection()
+            mapping = master.mode_mapping()
+
+            if mode_name not in mapping:
+                logger.error(f"Mode '{mode_name}' not found. Available: {list(mapping.keys())}")
+                return False
+
+            mode_id = mapping[mode_name]
+            logger.info(f"Setting mode {mode_name} (ID: {mode_id})")
+            
+            # Send the mode change
+            master.mav.set_mode_send(
+                master.target_system,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                mode_id
+            )
+
+            # Wait for mode change confirmation with non-blocking reads
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                if self._shutdown_event.is_set():  # ???
+                    return False
+                    
+                # Non-blocking read
+                msg = master.recv_match(type='HEARTBEAT', blocking=False, timeout=0.1)
+                if msg and msg.custom_mode == mode_id:
+                    logger.info(f"Mode change to {mode_name} confirmed")
+                    logger.info("   ")
+                    return True
+                    
+                time.sleep(0.1)
+            
+            logger.warning(f"Mode change to {mode_name} not confirmed within {timeout}s")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Failed to set mode {mode_name}: {e}")
+            return False
+
+    # Arming
+    def check_is_armable(self, timeout: float = 30.0, poll_interval: float = 0.5) -> bool:
+        """
+        Synchronous wrapper around _wait_for_armable_async.
+        Returns True if armable within `timeout` seconds, False otherwise.
+        """
+        if not self.is_running():
+            logger.error("SITL not running, cannot check armable state")
+            return False
+            
+        # Check if we're in an async context
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context - use executor to avoid blocking
+            future = asyncio.run_coroutine_threadsafe(
+                self._wait_for_armable_async(timeout, poll_interval), 
+                loop
+            )
+            return future.result(timeout=timeout + 5.0)  # Extra buffer for executor overhead
+        except RuntimeError:
+            # No running event loop - safe to call asyncio.run
+            try:
+                return asyncio.run(self._wait_for_armable_async(timeout, poll_interval))
+            except Exception as e:
+                logger.error(f"check_is_armable failed: {e}")
+                return False
+
+    async def _wait_for_armable_async(self, timeout: float = 30.0, poll_interval: float = 0.5) -> bool:
+        """
+        Async helper: wait until the vehicle reports is_armable via MAVSDK.telemetry.health()
+        """
+        logger.debug(f"Checking if vehicle is armable (timeout={timeout}s)")
+        
+        try:
+            # get or connect MAVSDK System
+            drone = await self._get_mavsdk_connection()
+            logger.debug("Got MAVSDK connection for armable check")
+
+            start = time.time()
+            async for health in drone.telemetry.health():
+                logger.debug(f"Health check: armable={health.is_armable}")
+                if health.is_armable:
+                    logger.debug("Vehicle is armable!")
+                    return True
+                if time.time() - start > timeout:
+                    logger.warning(f"Armable check timed out after {timeout}s")
+                    return False
+                await asyncio.sleep(poll_interval)
+
+            logger.warning("Health telemetry stream ended unexpectedly")
+            return False  # if telemetry.health() stream ends for some reason
+            
+        except Exception as e:
+            logger.error(f"Exception in _wait_for_armable_async: {e}")
+            raise
+
+
+    def restart_sitl(self, wipe_params: bool = True):
+        """
+        Full restart. wipe_params=True → uses -w to restore defaults.
+        """
+        logger.info(f"Restarting SITL (wipe_params={wipe_params})")
+        self.stop_sitl()
+        time.sleep(2)
+        self.wipe = wipe_params
+        self.start_sitl()
+
+    # Reset
+    async def _reset_async(self, keep_params: bool = True):
+        """
+        Async in-place reset via MAVSDK:
+          - teleports vehicle home
+          - clears mission
+          - optionally restores defaults from .parm if keep_params=False
+          - re-arms and sets guided mode
+        """
+        if not self.is_running():
+            raise RuntimeError("SITL not running")
+        print(f"Resetting SITL with keep_params={keep_params} from reset_async()")
+        
+        try:
+            # Get or establish persistent MAVSDK connection
+            drone = await self._get_mavsdk_connection()
+            print(f"Using persistent MAVSDK connection")
+            
+            # Small delay to ensure connection is stable
+            await asyncio.sleep(1)
+            
+            # # disarm vehicle (with error handling)
+            # try:
+            #     await drone.action.disarm()
+            #     print("Vehicle disarmed successfully")
+            # except Exception as e:
+            #     print(f"Warning: Disarm failed: {e}")
+            #     # Not critical for reset operation, continue anyway
+            
+            # teleport vehicle to home position
+            if self.home:
+                try:
+                    await drone.offboard.start()
+                    lat, lon, alt, yaw = self.home
+                    # Teleport to home position (0,0,0 in NED relative to home with original yaw)
+                    await drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, 0.0, math.radians(yaw)))
+                    await asyncio.sleep(0.5)
+                    await drone.offboard.stop()
+                    print("Vehicle teleported to home position")
+                except Exception as e:
+                    print(f"Warning: Teleport failed: {e}")
+            
+            # clear mission (less critical, so continue on failure)
+            try:
+                await drone.mission.clear_mission()
+                print("Mission cleared successfully")
+            except Exception as e:
+                print(f"Warning: Clear mission failed: {e}")
+            
+            # restore defaults if requested (with batching for reliability)
+            if not keep_params:
+                try:
+                    param_items = list(self._default_params.items())
+                    batch_size = 10  # Process parameters in batches
+                    for i in range(0, len(param_items), batch_size):
+                        batch = param_items[i:i + batch_size]
+                        for name, val in batch:
+                            await drone.param.set_param_float(name, val)
+                        # Small delay between batches to let autopilot process
+                        if i + batch_size < len(param_items):
+                            await asyncio.sleep(0.1)
+                    print(f"Restored {len(param_items)} default parameters")
+                except Exception as e:
+                    print(f"Warning: Parameter restore failed: {e}")
+            
+            # Wait a bit for parameters to settle
+            await asyncio.sleep(1.0)
+            
+            print("Reset operations completed successfully")
+            
+        except Exception as e:
+            print(f"Reset failed with error: {e}")
+            raise
+        finally:
+            # Ensure we always give time for operations to complete
+            try:
+                await asyncio.sleep(0.5)  # Give time for operations to complete
+            except:
+                pass
+        
+        # Set GUIDED mode after reset using async mode setting
+        print("Setting GUIDED mode after reset...")
+        await asyncio.sleep(1.0)  # Give time for operations to settle
+        
+        try:
+            if await self._set_mode_async('GUIDED'):
+                print("Successfully set GUIDED mode after reset")
+            else:
+                print("Warning: Failed to set GUIDED mode after reset")
+        except Exception as e:
+            print(f"Warning: Error setting GUIDED mode after reset: {e}")
+
+    def reset(self, keep_params: bool = True):
+        """
+        Synchronous wrapper for reset_async.
+        In-place reset via MAVSDK:
+          - teleports vehicle home
+          - clears mission  
+          - optionally restores defaults from .parm if keep_params=False
+          - sets guided mode after reset
+        """
+        return asyncio.run(self.reset_async(keep_params))
+
+    # PID Setting
+    async def set_params_async(self, pid_params):
+        drone = await self._get_mavsdk_connection()
+        # Set large values for the PID parameters to destabilize the drone
+        await self.set_pid_param_async(drone, "ATC_ANG_PIT_P", pid_params[0])  # Large value for Pitch Proportional
+        await self.set_pid_param_async(drone, "ATC_ANG_RLL_P", pid_params[1])  # Large value for Roll Proportional
+        await self.set_pid_param_async(drone, "ATC_ANG_YAW_P", pid_params[2])  # Large value for Yaw Proportional
+
+        await self.set_pid_param_async(drone, "ATC_RAT_PIT_P", pid_params[3])  # Large value for Rate Pitch Proportional
+        await self.set_pid_param_async(drone, "ATC_RAT_RLL_P", pid_params[4])  # Large value for Rate Roll Proportional
+        await self.set_pid_param_async(drone, "ATC_RAT_YAW_P", pid_params[5])  # Large value for Rate Yaw Proportional
+
+    async def set_pid_param_async(self, drone, param_name, value):
+        print(f"Setting {param_name} to {value}")
+        await drone.param.set_param_float(param_name, value)
+    
+    async def get_pid_param_async(self, drone, param_name):
+        print(f"Getting {param_name}")
+        return await drone.param.get_param_float(param_name)
+
+    async def get_pid_params_async(self):
+        drone = await self._get_mavsdk_connection()
+        return {
+            "ATC_ANG_PIT_P": await self.get_pid_param_async(drone, "ATC_ANG_PIT_P"),
+            "ATC_ANG_RLL_P": await self.get_pid_param_async(drone, "ATC_ANG_RLL_P"),
+            "ATC_ANG_YAW_P": await self.get_pid_param_async(drone, "ATC_ANG_YAW_P"),
+            "ATC_RAT_PIT_P": await self.get_pid_param_async(drone, "ATC_RAT_PIT_P"),
+            "ATC_RAT_RLL_P": await self.get_pid_param_async(drone, "ATC_RAT_RLL_P"),
+            "ATC_RAT_YAW_P": await self.get_pid_param_async(drone, "ATC_RAT_YAW_P"),
+        }
+
+
+    def is_running(self) -> bool:
+        return bool(self.process and self.process.poll() is None)
+
+    def get_mode(self) -> Optional[str]:
+        """
+        Get the current flight mode of the vehicle using cached connection.
+        
+        Returns:
+            str: Current mode name, or None if unable to determine
+        """
+        if not self.is_running():
+            return None
+            
+        try:
+            master = self._get_mavlink_connection()
+            
+            # Get a fresh heartbeat message with non-blocking read
+            msg = master.recv_match(type='HEARTBEAT', blocking=False, timeout=2.0)
+            if msg is None:
+                # Try one blocking read as fallback
+                msg = master.recv_match(type='HEARTBEAT', blocking=True, timeout=5.0)
+                if msg is None:
+                    return None
+                
+            # Get mode mapping and find current mode
+            mapping = master.mode_mapping()
+            current_mode_id = msg.custom_mode
+            
+            for mode_name, mode_id in mapping.items():
+                if mode_id == current_mode_id:
+                    return mode_name
+                    
+            return f"UNKNOWN_MODE_{current_mode_id}"
+            
+        except Exception as e:
+            logger.error(f"Failed to get current mode: {e}")
+            # Connection might be stale, reset it
+            self._close_mavlink_connection()
+            return None
+
+    def get_process_info(self) -> Dict[str, Any]:
+        if not self.is_running():
+            return {'status': 'not_running'}
+        p = psutil.Process(self.process.pid)
+        info = {
+            'status':       'running',
+            'pid':          p.pid,
+            'cpu_percent':  p.cpu_percent(),
+            'memory_mb':    p.memory_info().rss / (1024**2),
+            'num_children': len(p.children(recursive=True)),
+            'uptime_s':     time.time() - p.create_time()
+        }
+        
+        # Add current mode if available
+        current_mode = self.get_mode()
+        if current_mode:
+            info['current_mode'] = current_mode
+            
+        return info
+
+    def stop_sitl(self):
+        if not self.is_running():
+            return
+        logger.info("Stopping SITL...")
+        
+        # Close MAVLink connection first
+        self._close_mavlink_connection()
+        
+        # Close MAVSDK connection
+        self._close_mavsdk_connection()
+        
+        try:
+            os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+            self.process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            logger.warning("Graceful shutdown timed out; forcing kill")
+            os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
+            self.process.wait(timeout=5)
+        except ProcessLookupError:
+            pass
+        for pid in list(self.child_processes):
+            try:
+                psutil.Process(pid).terminate()
+            except:
+                pass
+        
+        # Clean up logging threads gracefully
+        if hasattr(self, '_shutdown_event'):
+            self._shutdown_event.set()  # Signal threads to stop
+        
+        if hasattr(self, 'log_threads') and self.log_threads:
+            for thread in self.log_threads:
+                if thread.is_alive():
+                    try:
+                        thread.join(timeout=2.0)  # Wait up to 2 seconds for thread to finish
+                        if thread.is_alive():
+                            logger.warning(f"Log thread {thread.name} did not terminate gracefully")
+                    except Exception as e:
+                        logger.debug(f"Error joining log thread: {e}")
+            self.log_threads.clear()
+        
+        self.process = None
+        self.child_processes.clear()
+        logger.info("SITL stopped.")
+
+
+    # Private methods
+    # utils for the SITL
     def _validate_paths(self):
         if not self.ardupilot_path.exists():
             raise FileNotFoundError(f"ArduPilot path not found: {self.ardupilot_path}")
@@ -125,33 +573,6 @@ class ArduPilotSITL:
                         pass
         logger.debug(f"Loaded {len(defaults)} default params from {path}")
         return defaults
-
-    def start_sitl(self):
-        if self.is_running():
-            raise RuntimeError("SITL already running")
-        cmd = self._build_command()
-        logger.info(f"Launching SITL: {' '.join(cmd)}")
-
-        self.process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            preexec_fn=os.setsid, cwd=str(self.ardupilot_path)
-        )
-        self._shutdown_event.clear()  # set to False, enables logging threads to run
-        self._start_log_threads()
-        self._wait_for_startup()      # ensures that the process is running and the port(s) are available
-        self._track_child_processes()
-
-
-        ### establish connections
-        logger.info("Establishing connections...")
-        self._get_mavlink_connection()
-        logger.info("MAVLink connection established")
-
-        try:
-            self.set_mode('GUIDED')
-        except Exception as e:
-            logger.warning(f"Error setting GUIDED mode after startup: {e}")
-        logger.info("SITL started successfully.")
 
     def _build_command(self) -> List[str]:
 
@@ -308,6 +729,7 @@ class ArduPilotSITL:
         except Exception as e:
             logger.warning(f"Could not track child processes: {e}")
 
+    # utils for connections
     def _get_mavlink_connection(self) -> mavutil.mavlink_connection:
         """
         Get or create a cached MAVLink connection.
@@ -447,423 +869,18 @@ class ArduPilotSITL:
             # the connection will be cleaned up when the object is destroyed
             self._mavsdk_system = None
 
-    def _set_mode_sync(self, mode_name: str, timeout: float = 10.0) -> bool:
-        """
-        Synchronous mode setting using pymavlink (for use in thread executor).
-        
-        Args:
-            mode_name: Name of the mode
-            timeout: Timeout in seconds
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            master = self._get_mavlink_connection()
-            mapping = master.mode_mapping()
-
-            if mode_name not in mapping:
-                logger.error(f"Mode '{mode_name}' not found. Available: {list(mapping.keys())}")
-                return False
-
-            mode_id = mapping[mode_name]
-            logger.info(f"Setting mode {mode_name} (ID: {mode_id})")
-            
-            # Send the mode change
-            master.mav.set_mode_send(
-                master.target_system,
-                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-                mode_id
-            )
-
-            # Wait for mode change confirmation with non-blocking reads
-            start_time = time.time()
-            while time.time() - start_time < timeout:
-                if self._shutdown_event.is_set():  # ???
-                    return False
-                    
-                # Non-blocking read
-                msg = master.recv_match(type='HEARTBEAT', blocking=False, timeout=0.1)
-                if msg and msg.custom_mode == mode_id:
-                    logger.info(f"Mode change to {mode_name} confirmed")
-                    logger.info("   ")
-                    return True
-                    
-                time.sleep(0.1)
-            
-            logger.warning(f"Mode change to {mode_name} not confirmed within {timeout}s")
-            return False
-            
-        except Exception as e:
-            logger.error(f"Failed to set mode {mode_name}: {e}")
-            return False
-
-    async def set_mode_async(self, mode_name: str, timeout: float = 10.0) -> bool:
-        """
-        Async mode setting method that doesn't block event loop.
-        
-        Args:
-            mode_name: Name of the mode
-            timeout: Timeout in seconds
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if not self.is_running():
-            logger.error("SITL not running, cannot set mode")
-            return False
-            
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            self._thread_executor, 
-            self._set_mode_sync, 
-            mode_name, 
-            timeout
-        )
-
-    def set_mode(self, mode_name: str, timeout: float = 10.0) -> bool:
-        """
-        General method to set any flight mode using pymavlink.
-        Uses thread executor to avoid blocking if called from async context.
-        
-        Args:
-            mode_name: Name of the mode (e.g., 'GUIDED', 'STABILIZE', 'LOITER', 'RTL', etc.)
-            timeout: Timeout in seconds to wait for mode change confirmation
-            
-        Returns:
-            bool: True if mode change was successful, False otherwise
-        """
-        if not self.is_running():
-            logger.error("SITL not running, cannot set mode")
-            return False
-        logger.info(f"Starting mode change to {mode_name}")
-        # Check if we're in an async context
-        try:
-            loop = asyncio.get_running_loop()
-            # We're in an async context - use executor to avoid blocking
-            future = asyncio.run_coroutine_threadsafe(
-                self.set_mode_async(mode_name, timeout), 
-                loop
-            )
-            return future.result(timeout=timeout + 5.0)  # Extra buffer for executor overhead
-        except RuntimeError:
-            # No running event loop - safe to call sync version
-            return self._set_mode_sync(mode_name, timeout)
-
-    async def _wait_for_armable_async(self, timeout: float = 30.0, poll_interval: float = 0.5) -> bool:
-        """
-        Async helper: wait until the vehicle reports is_armable via MAVSDK.telemetry.health()
-        """
-        logger.debug(f"Checking if vehicle is armable (timeout={timeout}s)")
-        
-        try:
-            # get or connect MAVSDK System
-            drone = await self._get_mavsdk_connection()
-            logger.debug("Got MAVSDK connection for armable check")
-
-            start = time.time()
-            async for health in drone.telemetry.health():
-                logger.debug(f"Health check: armable={health.is_armable}")
-                if health.is_armable:
-                    logger.debug("Vehicle is armable!")
-                    return True
-                if time.time() - start > timeout:
-                    logger.warning(f"Armable check timed out after {timeout}s")
-                    return False
-                await asyncio.sleep(poll_interval)
-
-            logger.warning("Health telemetry stream ended unexpectedly")
-            return False  # if telemetry.health() stream ends for some reason
-            
-        except Exception as e:
-            logger.error(f"Exception in _wait_for_armable_async: {e}")
-            raise
-
-    def check_is_armable(self, timeout: float = 30.0, poll_interval: float = 0.5) -> bool:
-        """
-        Synchronous wrapper around _wait_for_armable_async.
-        Returns True if armable within `timeout` seconds, False otherwise.
-        """
-        if not self.is_running():
-            logger.error("SITL not running, cannot check armable state")
-            return False
-            
-        # Check if we're in an async context
-        try:
-            loop = asyncio.get_running_loop()
-            # We're in an async context - use executor to avoid blocking
-            future = asyncio.run_coroutine_threadsafe(
-                self._wait_for_armable_async(timeout, poll_interval), 
-                loop
-            )
-            return future.result(timeout=timeout + 5.0)  # Extra buffer for executor overhead
-        except RuntimeError:
-            # No running event loop - safe to call asyncio.run
-            try:
-                return asyncio.run(self._wait_for_armable_async(timeout, poll_interval))
-            except Exception as e:
-                logger.error(f"check_is_armable failed: {e}")
-                return False
-
-    def stop_sitl(self):
-        if not self.is_running():
-            return
-        logger.info("Stopping SITL...")
-        
-        # Close MAVLink connection first
-        self._close_mavlink_connection()
-        
-        # Close MAVSDK connection
-        self._close_mavsdk_connection()
-        
-        try:
-            os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
-            self.process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            logger.warning("Graceful shutdown timed out; forcing kill")
-            os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
-            self.process.wait(timeout=5)
-        except ProcessLookupError:
-            pass
-        for pid in list(self.child_processes):
-            try:
-                psutil.Process(pid).terminate()
-            except:
-                pass
-        
-        # Clean up logging threads gracefully
-        if hasattr(self, '_shutdown_event'):
-            self._shutdown_event.set()  # Signal threads to stop
-        
-        if hasattr(self, 'log_threads') and self.log_threads:
-            for thread in self.log_threads:
-                if thread.is_alive():
-                    try:
-                        thread.join(timeout=2.0)  # Wait up to 2 seconds for thread to finish
-                        if thread.is_alive():
-                            logger.warning(f"Log thread {thread.name} did not terminate gracefully")
-                    except Exception as e:
-                        logger.debug(f"Error joining log thread: {e}")
-            self.log_threads.clear()
-        
-        self.process = None
-        self.child_processes.clear()
-        logger.info("SITL stopped.")
-
-    def restart_sitl(self, wipe_params: bool = True):
-        """
-        Full restart. wipe_params=True → uses -w to restore defaults.
-        """
-        logger.info(f"Restarting SITL (wipe_params={wipe_params})")
+    # Closing and Cleanup
+    def close(self):
         self.stop_sitl()
-        time.sleep(2)
-        self.wipe = wipe_params
-        self.start_sitl()
-
-    async def reset_async(self, keep_params: bool = True):
-        """
-        Async in-place reset via MAVSDK:
-          - teleports vehicle home
-          - clears mission
-          - optionally restores defaults from .parm if keep_params=False
-          - re-arms and sets guided mode
-        """
-        if not self.is_running():
-            raise RuntimeError("SITL not running")
-        print(f"Resetting SITL with keep_params={keep_params} from reset_async()")
-        
-        try:
-            # Get or establish persistent MAVSDK connection
-            drone = await self._get_mavsdk_connection()
-            print(f"Using persistent MAVSDK connection")
-            
-            # Small delay to ensure connection is stable
-            await asyncio.sleep(1)
-            
-            # # disarm vehicle (with error handling)
-            # try:
-            #     await drone.action.disarm()
-            #     print("Vehicle disarmed successfully")
-            # except Exception as e:
-            #     print(f"Warning: Disarm failed: {e}")
-            #     # Not critical for reset operation, continue anyway
-            
-            # teleport vehicle to home position
-            if self.home:
-                try:
-                    await drone.offboard.start()
-                    lat, lon, alt, yaw = self.home
-                    # Teleport to home position (0,0,0 in NED relative to home with original yaw)
-                    await drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, 0.0, math.radians(yaw)))
-                    await asyncio.sleep(0.5)
-                    await drone.offboard.stop()
-                    print("Vehicle teleported to home position")
-                except Exception as e:
-                    print(f"Warning: Teleport failed: {e}")
-            
-            # clear mission (less critical, so continue on failure)
-            try:
-                await drone.mission.clear_mission()
-                print("Mission cleared successfully")
-            except Exception as e:
-                print(f"Warning: Clear mission failed: {e}")
-            
-            # restore defaults if requested (with batching for reliability)
-            if not keep_params:
-                try:
-                    param_items = list(self._default_params.items())
-                    batch_size = 10  # Process parameters in batches
-                    for i in range(0, len(param_items), batch_size):
-                        batch = param_items[i:i + batch_size]
-                        for name, val in batch:
-                            await drone.param.set_param_float(name, val)
-                        # Small delay between batches to let autopilot process
-                        if i + batch_size < len(param_items):
-                            await asyncio.sleep(0.1)
-                    print(f"Restored {len(param_items)} default parameters")
-                except Exception as e:
-                    print(f"Warning: Parameter restore failed: {e}")
-            
-            # Wait a bit for parameters to settle
-            await asyncio.sleep(1.0)
-            
-            print("Reset operations completed successfully")
-            
-        except Exception as e:
-            print(f"Reset failed with error: {e}")
-            raise
-        finally:
-            # Ensure we always give time for operations to complete
-            try:
-                await asyncio.sleep(0.5)  # Give time for operations to complete
-            except:
-                pass
-        
-        # Set GUIDED mode after reset using async mode setting
-        print("Setting GUIDED mode after reset...")
-        await asyncio.sleep(1.0)  # Give time for operations to settle
-        
-        try:
-            if await self.set_mode_async('GUIDED'):
-                print("Successfully set GUIDED mode after reset")
-            else:
-                print("Warning: Failed to set GUIDED mode after reset")
-        except Exception as e:
-            print(f"Warning: Error setting GUIDED mode after reset: {e}")
-
-    def reset(self, keep_params: bool = True):
-        """
-        Synchronous wrapper for reset_async.
-        In-place reset via MAVSDK:
-          - teleports vehicle home
-          - clears mission  
-          - optionally restores defaults from .parm if keep_params=False
-          - sets guided mode after reset
-        """
-        return asyncio.run(self.reset_async(keep_params))
-
-    async def set_params_async(self, pid_params):
-        drone = await self._get_mavsdk_connection()
-        # Set large values for the PID parameters to destabilize the drone
-        await self.set_pid_param_async(drone, "ATC_ANG_PIT_P", pid_params[0])  # Large value for Pitch Proportional
-        await self.set_pid_param_async(drone, "ATC_ANG_RLL_P", pid_params[1])  # Large value for Roll Proportional
-        await self.set_pid_param_async(drone, "ATC_ANG_YAW_P", pid_params[2])  # Large value for Yaw Proportional
-
-        await self.set_pid_param_async(drone, "ATC_RAT_PIT_P", pid_params[3])  # Large value for Rate Pitch Proportional
-        await self.set_pid_param_async(drone, "ATC_RAT_RLL_P", pid_params[4])  # Large value for Rate Roll Proportional
-        await self.set_pid_param_async(drone, "ATC_RAT_YAW_P", pid_params[5])  # Large value for Rate Yaw Proportional
-
-    async def set_pid_param_async(self, drone, param_name, value):
-        print(f"Setting {param_name} to {value}")
-        await drone.param.set_param_float(param_name, value)
-    
-    async def get_pid_param_async(self, drone, param_name):
-        print(f"Getting {param_name}")
-        return await drone.param.get_param_float(param_name)
-
-    async def get_pid_params_async(self):
-        drone = await self._get_mavsdk_connection()
-        return {
-            "ATC_ANG_PIT_P": await self.get_pid_param_async(drone, "ATC_ANG_PIT_P"),
-            "ATC_ANG_RLL_P": await self.get_pid_param_async(drone, "ATC_ANG_RLL_P"),
-            "ATC_ANG_YAW_P": await self.get_pid_param_async(drone, "ATC_ANG_YAW_P"),
-            "ATC_RAT_PIT_P": await self.get_pid_param_async(drone, "ATC_RAT_PIT_P"),
-            "ATC_RAT_RLL_P": await self.get_pid_param_async(drone, "ATC_RAT_RLL_P"),
-            "ATC_RAT_YAW_P": await self.get_pid_param_async(drone, "ATC_RAT_YAW_P"),
-        }
-
-    def is_running(self) -> bool:
-        return bool(self.process and self.process.poll() is None)
-
-    # Getters
-    def get_mode(self) -> Optional[str]:
-        """
-        Get the current flight mode of the vehicle using cached connection.
-        
-        Returns:
-            str: Current mode name, or None if unable to determine
-        """
-        if not self.is_running():
-            return None
-            
-        try:
-            master = self._get_mavlink_connection()
-            
-            # Get a fresh heartbeat message with non-blocking read
-            msg = master.recv_match(type='HEARTBEAT', blocking=False, timeout=2.0)
-            if msg is None:
-                # Try one blocking read as fallback
-                msg = master.recv_match(type='HEARTBEAT', blocking=True, timeout=5.0)
-                if msg is None:
-                    return None
-                
-            # Get mode mapping and find current mode
-            mapping = master.mode_mapping()
-            current_mode_id = msg.custom_mode
-            
-            for mode_name, mode_id in mapping.items():
-                if mode_id == current_mode_id:
-                    return mode_name
-                    
-            return f"UNKNOWN_MODE_{current_mode_id}"
-            
-        except Exception as e:
-            logger.error(f"Failed to get current mode: {e}")
-            # Connection might be stale, reset it
-            self._close_mavlink_connection()
-            return None
-
-    def get_process_info(self) -> Dict[str, Any]:
-        if not self.is_running():
-            return {'status': 'not_running'}
-        p = psutil.Process(self.process.pid)
-        info = {
-            'status':       'running',
-            'pid':          p.pid,
-            'cpu_percent':  p.cpu_percent(),
-            'memory_mb':    p.memory_info().rss / (1024**2),
-            'num_children': len(p.children(recursive=True)),
-            'uptime_s':     time.time() - p.create_time()
-        }
-        
-        # Add current mode if available
-        current_mode = self.get_mode()
-        if current_mode:
-            info['current_mode'] = current_mode
-            
-        return info
-
-    def _cleanup_on_exit(self):
-        if self.is_running():
-            logger.info("Cleanup on exit: stopping SITL")
-            self.stop_sitl()
         
         # Shutdown thread executor
         if hasattr(self, '_thread_executor'):
             self._thread_executor.shutdown(wait=False)
 
-    def close(self):
-        self.stop_sitl()
+    def _cleanup_on_exit(self):
+        if self.is_running():
+            logger.info("Cleanup on exit: stopping SITL")
+            self.stop_sitl()
         
         # Shutdown thread executor
         if hasattr(self, '_thread_executor'):
