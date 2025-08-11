@@ -148,26 +148,27 @@ class GazeboInterface:
         except psutil.NoSuchProcess:
             return {"status": "process_not_found"}
     
-    def reset_world(self):
-        logger.info(f"🔄 Resetting world: {self.world_name}")
+    def transport_position(self, name, position, orientation):
         try:
+            command = f"gz service -s /world/{self.world_name}/set_pose --reqtype gz.msgs.Pose --reptype gz.msgs.Boolean --timeout 300 --req 'name: {name}, position: {{x: {position[0]}, y: {position[1]}, z: {position[2]}}}, orientation: {{x: {orientation[0]}, y: {orientation[1]}, z: {orientation[2]}, w: {orientation[3]}}}'"
+            logger.info(f"Command: {command}")
             subprocess.run(
                 [
                     "gz", "service",
-                    "-s", f"/world/{self.world_name}/control",
-                    "--reqtype", "gz.msgs.WorldControl",
+                    "-s", f"/world/{self.world_name}/set_pose",
+                    "--reqtype", "gz.msgs.Pose",
                     "--reptype", "gz.msgs.Boolean",
-                    "--timeout", "3000",
-                    "--req", "reset: {all: true}"
+                    "--timeout", "300",
+                    "--req", f"name: '{name}', position: {{x: {position[0]}, y: {position[1]}, z: {position[2]}}}, orientation: {{x: {orientation[0]}, y: {orientation[1]}, z: {orientation[2]}, w: {orientation[3]}}}"
                 ],
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
-            logger.info("✅ World reset successful.")
+            logger.info("✅ Drone transport successful.")
         except subprocess.CalledProcessError as e:
-            logger.error(f"❌ World reset failed: {e.stderr.decode()}")
-            raise RuntimeError("Gazebo reset service failed.")
+            logger.error(f"❌ Drone transport failed: {e.stderr.decode()}")
+            raise RuntimeError("Gazebo transport service failed.")
  
     def pause_simulation(self):
         logger.info(f"⏸️  Pausing simulation in world: {self.world_name}")

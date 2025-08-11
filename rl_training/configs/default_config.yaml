@@ -3,12 +3,12 @@
 
 # Environment configuration
 environment_config:
-  max_episode_steps: 100
-  mode: "position"  # position, attitude, stabilize, althold
-  observation_space: "position_velocity_attitude" 
-  action_space: "throttle_roll_pitch_yaw" 
-  reward_function: "hover" 
-
+  max_episode_steps: 10
+  mode: "altitude"  # position, attitude, stabilize, althold, altitude
+  observable_variables: "PSC_POSZ_P+PSC_VELZ_P+relative_altitude_m" 
+  action_variables: "PSC_POSZ_P+PSC_VELZ_P" 
+  reward_function: "error" 
+  
 # ArduPilot SITL configuration
 ardupilot_config:
   ardupilot_path: "/home/pid_rl/ardupilot"           # Path to ArduPilot directory
@@ -19,7 +19,7 @@ ardupilot_config:
   instance:  null                                                # Instance number
   count: null                                                    # Number of instances
   location: null                                                 # Home location lat,lon,alt,yaw
-  speedup: null                                                  # Simulation speed multiplier
+  speedup: 1                                                  # Simulation speed multiplier
   wipe_eeprom: true                                             # Wipe EEPROM on startup
   use_dir: null                                                  # Use directory for SITL
   delay_start: null                                              # Delay startup by this many seconds
