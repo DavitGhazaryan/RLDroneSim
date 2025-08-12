@@ -17,11 +17,11 @@ ardupilot_config:
   frame: "gazebo-iris"                                           # Vehicle model for Gazebo integration
   
   # optional
-  instance:  0                                                  # Instance number
+  instance:  0                                                   # Instance number
   count: null                                                    # Number of instances
   location: null                                                 # Home location lat,lon,alt,yaw
-  speedup: 1                                                  # Simulation speed multiplier
-  wipe_eeprom: true                                             # Wipe EEPROM on startup
+  speedup: 1                                                     # Simulation speed multiplier
+  wipe_eeprom: true                                              # Wipe EEPROM on startup
   use_dir: null                                                  # Use directory for SITL
   delay_start: null                                              # Delay startup by this many seconds
   model: "JSON"                                                  # Vehicle model for Gazebo integration

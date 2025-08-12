@@ -4,28 +4,45 @@ services:
       context: .
     image: pid_rl:latest
     container_name: pid_rl_container
-    runtime: nvidia
+
+    # Request NVIDIA GPUs (modern compose)
+    gpus: all
+
     environment:
-      - DISPLAY=${DISPLAY}
+      # WSLg GUI
+      - DISPLAY=:0
+      - WAYLAND_DISPLAY=wayland-0
+      - XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir
+      - PULSE_SERVER=unix:/mnt/wslg/PulseServer
+      # NVIDIA/GL/Vulkan
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:${LD_LIBRARY_PATH}
+      # Gazebo
       - GZ_VERSION=harmonic
+
+    # Needed for Gazebo + input/audio; keep security relaxed if you rely on sim plugins
     privileged: true
-    cap_add:
-      - ALL
+    cap_add: [ "ALL" ]
     security_opt:
       - seccomp:unconfined
       - apparmor:unconfined
+
+    # ---- Version A: engine runs INSIDE your WSL distro ----
     volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /mnt/wslg:/mnt/wslg:ro
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
       - ./docs:/home/pid_rl/docs
       - ./examples:/home/pid_rl/examples
       - ./rl_training:/home/pid_rl/rl_training
       - ./tests:/home/pid_rl/tests
       - ./requirements.txt:/home/pid_rl/requirements.txt
       - ./simple_world.sdf:/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf
+
+    # expose render nodes (WSLg uses D3D12->Mesa/Vulkan via /usr/lib/wsl/lib)
     devices:
       - /dev/dri:/dev/dri
+
     network_mode: host
     stdin_open: true
     tty: true

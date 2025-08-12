@@ -173,7 +173,6 @@ class ArdupilotEnv(gym.Env):
         reward = await self._compute_reward(pose)
         
         
-        
         def _check_terminated(pose):
             # Assume pose is a dict with keys: 'pitch', 'roll', 'relative_altitude', 'x', 'y', 'z'
             # 1. Crash: very big pitch or roll (e.g., > 60 deg)
@@ -219,6 +218,7 @@ class ArdupilotEnv(gym.Env):
         ])
 
         info = {}
+        print(f"Observation: {observation}")
         return observation, reward, terminated, truncated, info
 
     async def _async_arm(self):
