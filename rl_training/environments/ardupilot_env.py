@@ -86,7 +86,7 @@ class ArdupilotEnv(gym.Env):
             self.gazebo._wait_for_startup()
             self.gazebo.resume_simulation()
             logger.info("✅ Gazebo initialized")
-
+            logger.info("--------------------------------")
             logger.info("🚁 Starting ArduPilot SITL...")
             self.sitl.start_sitl()
             info = self.sitl.get_process_info()
@@ -98,8 +98,10 @@ class ArdupilotEnv(gym.Env):
             ## Setup Mission
             self.initial_pose = self.loop.run_until_complete(self.sitl.get_pose_async())
             self._async_mission_function = self._setup_mission()
-
+            logger.info("--------------------------------")
             self.loop.run_until_complete(self._async_mission_function())
+            logger.info("--------------------------------")
+
 
         else:
             self.gazebo.transport_position(self.sitl.name, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
