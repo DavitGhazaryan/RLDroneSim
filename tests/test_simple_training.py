@@ -16,6 +16,7 @@ def main():
     
     for episode in range(total_episodes):
         obs, info = env.reset()
+        print(f"Observation: {obs}")
         episode_reward = 0.0
         print(f"Episode {episode}: Reward = {episode_reward:.2f}")
         for step in range(max_steps_per_episode):

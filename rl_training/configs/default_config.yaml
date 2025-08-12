@@ -5,8 +5,9 @@
 environment_config:
   max_episode_steps: 10
   mode: "altitude"  # position, attitude, stabilize, althold, altitude
-  observable_variables: "PSC_POSZ_P+PSC_VELZ_P+relative_altitude_m" 
-  action_variables: "PSC_POSZ_P+PSC_VELZ_P" 
+  observable_gains: "PSC_POSZ_P+PSC_VELZ_P"
+  observable_states: "relative_altitude_m"
+  action_gains: "PSC_POSZ_P+PSC_VELZ_P" 
   reward_function: "error" 
   
 # ArduPilot SITL configuration
