@@ -21,8 +21,7 @@ from pathlib import Path
 from pymavlink import mavutil
 
 from mavsdk import System
-from mavsdk.offboard import PositionNedYaw
-from mavsdk.param import Param
+
 
 logger = logging.getLogger("SITL")
 logging.basicConfig(level=logging.INFO)
@@ -59,7 +58,7 @@ class ArduPilotSITL:
         # optional
         self.name             = config.get('name', 'iris_with_gimbal')
         self.instance         = config.get('instance', None)
-        self.count            = config.get('count')
+        self.count            = config.get('count', None)
         self.location_str     = config.get('location')
         self.speedup          = config.get('speedup')
         self.wipe              = config.get('wipe_eeprom', False)
@@ -77,8 +76,8 @@ class ArduPilotSITL:
         self.mavproxy_args     = config.get('mavproxy_args')
         self.timeout           = config.get('timeout', 30.0)
         self.min_startup_delay = config.get('min_startup_delay', 5.0)
-        self.master_port       = config.get('master_port', 14550)  # Configurable MAVLink port
-        self.mavsdk_port       = config.get('mavsdk_port', 14551)  # Configurable MAVSDK port
+        self.master_port       = config.get('master_port', 14551)  # Configurable MAVLink port
+        self.mavsdk_port       = config.get('mavsdk_port', 14550)  # Configurable MAVSDK port
         self.port_check_timeout = config.get('port_check_timeout', 30.0)  # Timeout for port availability
 
         # parse home location
@@ -102,7 +101,8 @@ class ArduPilotSITL:
         if self.is_running():
             raise RuntimeError("SITL already running")
         cmd = self._build_command()
-        logger.info(f"Launching SITL: {' '.join(cmd)}")
+        logger.info(f"Launching SITL")
+        logger.info(f"{cmd}")
 
         self.process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -229,6 +229,7 @@ class ArduPilotSITL:
     # Pose Getting
     async def get_pose_async(self):
         drone = await self._get_mavsdk_connection()
+        logger.info("Getting Position--------------------------------")
         position = await anext(drone.telemetry.position())
         return position
     
@@ -404,20 +405,16 @@ class ArduPilotSITL:
         if self.console                 : cmd.append('--console')
 
         if self.master_port is not None and self.mavsdk_port is not None:
-            cmd.append(f'--mavproxy-args=--out udp:0.0.0.0:{self.master_port} --out udp:0.0.0.0:{self.mavsdk_port}')
+            # cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port} --out udp:127.0.0.1:{self.mavsdk_port}')
+            cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port}')
         else:
             cmd.append(f'--mavproxy-args={self.mavproxy_args}')
-        logger.info(f"Command: {' '.join(cmd)}")
         return cmd
 
     def _start_log_threads(self):
         assert self.process is not None
         def reader(pipe, level):
-            '''
-            Reads the stdout and stderr of the SITL process and logs them to the logger.
-            This is a non-daemon thread, so it will block the main thread from exiting.
-            Will end when shutdown_event is set to True.
-            '''
+
             try:
                 while not self._shutdown_event.is_set():
                     line = pipe.readline()
@@ -433,8 +430,8 @@ class ArduPilotSITL:
                     pass
         
         # Create non-daemon threads and store references
-        stdout_thread = threading.Thread(target=reader, args=(self.process.stdout, logging.INFO), daemon=False)
-        stderr_thread = threading.Thread(target=reader, args=(self.process.stderr, logging.ERROR), daemon=False)
+        stdout_thread = threading.Thread(target=reader, args=(self.process.stdout, logging.INFO), daemon=True)
+        stderr_thread = threading.Thread(target=reader, args=(self.process.stderr, logging.ERROR), daemon=True)
         
         stdout_thread.start()
         stderr_thread.start()
@@ -569,7 +566,7 @@ class ArduPilotSITL:
 
     async def _get_mavsdk_connection(self) -> System:
         """
-        Get or create a cached MAVSDK connection.
+        Get or create a cached MAVSDK connection using singleton pattern.
         
         Returns:
             System: Active MAVSDK connection
@@ -577,55 +574,36 @@ class ArduPilotSITL:
         Raises:
             RuntimeError: If connection cannot be established
         """
-        if self._mavsdk_system is None:
-            logger.debug("Creating new MAVSDK System instance")
-            self._mavsdk_system = System()
-        else:
-        # Check if already connected - but only if system was previously created
-            try:
-                # Quick check with short timeout to avoid hanging
-                connection_task = asyncio.create_task(
-                    self._mavsdk_system.core.connection_state().__anext__()
-                )
-                try:
-                    state = await asyncio.wait_for(connection_task, timeout=0.5)
-                    if state.is_connected:
-                        logger.debug("MAVSDK already connected, reusing connection")
-                        return self._mavsdk_system
-                except (asyncio.TimeoutError, StopAsyncIteration, Exception):
-                    # Cancel the task to prevent unawaited coroutine warning
-                    connection_task.cancel()
-                    try:
-                        await connection_task
-                    except asyncio.CancelledError:
-                        pass
-                    # Not connected or error checking - proceed to connect
-                    logger.debug("Connection check failed or not connected, proceeding to connect")
-            except Exception as e:
-                logger.debug(f"Connection check failed: {e}")
+        # If we already have a connection, return it
+        if self._mavsdk_system is not None:
+            logger.info("Returning existing MAVSDK connection")
+            return self._mavsdk_system
 
-        # Not connected yet → build address and attempt to connect
+        # Create new connection instance
+        logger.info("Creating new MAVSDK System instance")
+        self._mavsdk_system = System()
+        
+        # Build connection address
         port = self.mavsdk_port
-        address = f"udp://0.0.0.0:{port}"
-        logger.debug(f"Connecting MAVSDK to {address}")
+        address = f"udpin://127.0.0.1:{port}"
+        logger.info(f"Connecting MAVSDK to {address}")
 
         try:
-            # Kick off the connection
+            # Establish connection
             await self._mavsdk_system.connect(system_address=address)
-            logger.debug(f"Connection initiated to {address}")
+            logger.info(f"Connection initiated to {address}")
 
-            # Now wait for connection to be established
+            # Wait for connection to be established
             connected = False
             start_time = time.time()
             
             while time.time() - start_time < self.timeout:
-                state_task = None
                 try:
-                    # Check connection state with timeout
-                    state_task = asyncio.create_task(
-                        self._mavsdk_system.core.connection_state().__anext__()
+                    # Simple connection state check
+                    state = await asyncio.wait_for(
+                        self._mavsdk_system.core.connection_state().__anext__(),
+                        timeout=1.0
                     )
-                    state = await asyncio.wait_for(state_task, timeout=1.0)
                     
                     if state.is_connected:
                         connected = True
@@ -633,29 +611,17 @@ class ArduPilotSITL:
                         break
                         
                 except (asyncio.TimeoutError, StopAsyncIteration):
-                    # Cancel the task to prevent unawaited coroutine warning
-                    if state_task and not state_task.done():
-                        state_task.cancel()
-                        try:
-                            await state_task
-                        except asyncio.CancelledError:
-                            pass
                     # Continue waiting
                     await asyncio.sleep(0.5)
                     continue
                 except Exception as e:
-                    # Cancel the task to prevent unawaited coroutine warning
-                    if state_task and not state_task.done():
-                        state_task.cancel()
-                        try:
-                            await state_task
-                        except asyncio.CancelledError:
-                            pass
                     logger.warning(f"Error checking connection state: {e}")
                     await asyncio.sleep(0.5)
                     continue
             
             if not connected:
+                # Clean up on failure
+                self._mavsdk_system = None
                 raise RuntimeError(f"Failed to establish connection to {address} within {self.timeout} seconds")
 
             logger.debug(f"Established MAVSDK connection to {address}")

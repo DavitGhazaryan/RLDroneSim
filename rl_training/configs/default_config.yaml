@@ -19,7 +19,7 @@ ardupilot_config:
   instance:  0                                                  # Instance number
   count: null                                                    # Number of instances
   location: null                                                 # Home location lat,lon,alt,yaw
-  speedup: 2                                                  # Simulation speed multiplier
+  speedup: 1                                                  # Simulation speed multiplier
   wipe_eeprom: true                                             # Wipe EEPROM on startup
   use_dir: null                                                  # Use directory for SITL
   delay_start: null                                              # Delay startup by this many seconds
@@ -41,7 +41,7 @@ ardupilot_config:
 gazebo_config:
   sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  
   gui: true       
-  real_time_factor: 2.0  # Real-time factor for simulation speed
+  real_time_factor: 1.0  # Real-time factor for simulation speed
   step_size: 0.001       # Physics step size in seconds
   timeout: 15.0          # Startup timeout in seconds
   verbose: false         # Verbosity level

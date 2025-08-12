@@ -96,17 +96,22 @@ class ArdupilotEnv(gym.Env):
             ## Resetting Ends Here: Drone is Armed
 
             ## Setup Mission
+            logger.info("Getting Initial Pose--------------------------------")
             self.initial_pose = self.loop.run_until_complete(self.sitl.get_pose_async())
             self._async_mission_function = self._setup_mission()
             logger.info("--------------------------------")
+
             self.loop.run_until_complete(self._async_mission_function())
-            logger.info("--------------------------------")
 
 
         else:
             self.gazebo.transport_position(self.sitl.name, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
         
+        logger.info("Before Observation--------------------------------")
+        self.initial_pose = self.loop.run_until_complete(self.sitl.get_pose_async())
+        logger.info(f"Initial Pose Checked: {self.initial_pose}")
         self.old_observation, info = self.loop.run_until_complete(self._async_get_observation())
+        logger.info("After Observation--------------------------------")
 
         return self.old_observation, info  # observation, info
 
@@ -116,19 +121,22 @@ class ArdupilotEnv(gym.Env):
         This function is called when the environment is reset.
         """
         drone = await self.sitl._get_mavsdk_connection()
+        logger.info("Getting Parameters--------------------------------")
+        # observed_gains = {
+        #     variable: await drone.param.get_param_float(variable)
+        #     for variable in self.observable_variables if variable in PID_KEYS    # all PID names are longer than 3 characters
+        # }
+        # async for state in drone.core.connection_state():
+        #     logger.info(f"[MAVSDK] Connected: {state.is_connected}")
+        # position = await anext(drone.telemetry.position())
+        # logger.info(f"Position was able to be retrieved: {position}")
 
-        observed_gains = {
-            variable: await drone.param.get_param_float(variable)
-            for variable in self.observable_variables if variable in PID_KEYS    # all PID names are longer than 3 characters
-        }
 
-        altitude = await anext(drone.telemetry.altitude())
-        print(f"Altitude: {altitude}")
         # observation = np.concatenate([
         #     np.array([observed_gains[k] for k in observed_gains], dtype=np.float32),
         #     # np.array([altitude.relative_altitude_m], dtype=np.float32)
         # ])
-        return [0.0], {}  # observation, info
+        return [0.0, 0.0, 0.0], {}  # observation, info
         # return observation, {}  # observation, info
     
     def _setup_mission(self):
@@ -147,8 +155,8 @@ class ArdupilotEnv(gym.Env):
         return obs, reward, done, truncated, info
 
     async def _async_step(self, action):
-        pid_params = self.old_observation + action
-        await self.sitl.set_params_async(pid_params)
+        # pid_params = self.old_observation + action
+        # await self.sitl.set_params_async(pid_params)
         pid_params = await self.sitl.get_pid_params_async()
         pose = await self.sitl.get_pose_async()
         reward = await self._compute_reward(pid_params, pose)
@@ -211,14 +219,17 @@ class ArdupilotEnv(gym.Env):
 
     async def _async_takeoff(self):
         logger.info("Taking off to 5 m...")
+
         drone = await self.sitl._get_mavsdk_connection()
+        # async for state in drone.core.connection_state():
+        #     logger.info(f"[MAVSDK] Connected: {state.is_connected}")
+        logger.info("Taking off to 5 m--------------------------------")
         await drone.action.takeoff()
         await asyncio.sleep(5.0)
 
     async def _compute_reward(self, pid_params, pose):
         await asyncio.sleep(0.0000001)
         return 0.0
-
 
     def __compatibility_checks(self):
         if self.config['environment_config']['mode'] not in ['position', 'attitude', 'stabilize', 'althold', 'altitude']:
