@@ -1,0 +1,58 @@
+services:
+  pid_rl:
+    build:
+      context: .
+    image: pid_rl:latest
+    container_name: pid_rl_container
+
+    runtime: nvidia
+    environment:
+      # WSLg GUI env (must come from your WSL shell)
+      - DISPLAY
+      - WAYLAND_DISPLAY
+      - XDG_RUNTIME_DIR
+      # Force accelerated path instead of llvmpipe
+      - LIBGL_ALWAYS_SOFTWARE=0
+      - MESA_LOADER_DRIVER_OVERRIDE=d3d12
+      - LIBGL_DRIVERS_PATH=/usr/lib/wsl/lib/dri:/usr/lib/x86_64-linux-gnu/dri
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:${LD_LIBRARY_PATH}
+      - VK_ICD_FILENAMES=/usr/lib/wsl/lib/d3d12_icd.json
+      # Gazebo/Qt can use Wayland then fall back to X11
+      - QT_QPA_PLATFORM=wayland;xcb
+      # Optional: audio via WSLg
+      - PULSE_SERVER=unix:/mnt/wslg/PulseServer
+      # CUDA (compute) still available
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+      - GZ_VERSION=harmonic
+
+    # PRIVILEGED isn't required for GUI; keep if you need it for other reasons
+    privileged: true
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+
+    volumes:
+      # Wayland + X11 sockets
+      - ${XDG_RUNTIME_DIR}:${XDG_RUNTIME_DIR}
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # WSLg graphics/audio assets
+      - /usr/lib/wsl:/usr/lib/wsl:ro
+      - /mnt/wslg:/mnt/wslg:ro
+
+      # your project mounts
+      - ./docs:/home/pid_rl/docs
+      - ./examples:/home/pid_rl/examples
+      - ./rl_training:/home/pid_rl/rl_training
+      - ./tests:/home/pid_rl/tests
+      - ./requirements.txt:/home/pid_rl/requirements.txt
+      - ./simple_world.sdf:/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf
+
+    devices:
+      # WSLg vGPU device (required). Drop /dev/dri on WSL.
+      - /dev/dxg:/dev/dxg
+
+    shm_size: "2g"
+    network_mode: host
+    stdin_open: true
+    tty: true
