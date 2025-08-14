@@ -520,7 +520,7 @@ class ArduPilotSITL:
         """
         # If we already have a connection, return it
         if self._mavsdk_system is not None:
-            logger.info("Returning existing MAVSDK connection")
+            logger.debug("Returning existing MAVSDK connection")
             return self._mavsdk_system
 
         # Create new connection instance

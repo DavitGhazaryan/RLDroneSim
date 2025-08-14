@@ -9,6 +9,8 @@ environment_config:
   observable_states: "relative_altitude_m"
   action_gains: "PSC_POSZ_P+PSC_VELZ_P" 
   reward_function: "error" 
+  action_dt: 0.1
+  speed_up: 10.0
   
 # ArduPilot SITL configuration
 ardupilot_config:
@@ -42,7 +44,6 @@ ardupilot_config:
 gazebo_config:
   sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  
   gui: true       
-  real_time_factor: 1.0  # Real-time factor for simulation speed
   step_size: 0.001       # Physics step size in seconds
   timeout: 15.0          # Startup timeout in seconds
   verbose: false         # Verbosity level

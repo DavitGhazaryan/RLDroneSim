@@ -60,6 +60,7 @@ class ArdupilotEnv(gym.Env):
         self.initial_pose = None
         # self.old_observation = None    # old observation is stored as a dict
         self._async_mission_function = None
+        self.action_dt = self.environment_config.get('action_dt', 1.0)
 
         # Initialize spaces
         self.observation_space = self._define_observation_space()
@@ -143,8 +144,7 @@ class ArdupilotEnv(gym.Env):
                 raise ValueError(f"Invalid mode: {self.config['environment_config']['mode']}")
     
     # async def _action_time_delay(self):
-
-
+    
     def get_random_initial_state(self):
         # TODO
         return (0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0)
@@ -154,6 +154,17 @@ class ArdupilotEnv(gym.Env):
         obs, reward, done, truncated, info = self.loop.run_until_complete(self._async_step(action))
         # self.old_observation = obs
         return obs, reward, done, truncated, info
+
+    async def _gazebo_sleep(self, duration):
+        """
+        Sleep for the given duration (in seconds) using Gazebo simulation time.
+        """
+        start_time = self.gazebo.get_sim_time()
+        while True:
+            await asyncio.sleep(0.0001)
+            current_time = self.gazebo.get_sim_time()
+            if current_time - start_time >= duration:
+                break
 
     async def _async_step(self, action):
         """
@@ -170,15 +181,15 @@ class ArdupilotEnv(gym.Env):
         # apply the action to the new gains and set them
         for var in self.action_gains:
             new_gains[var] += action[var]
-            await drone.param.set_param_float(var, new_gains[var])
-        ### TO DO
-        await asyncio.sleep(2)
-        
+            await drone.param.set_param_float(var, new_gains[var].item())
+
+        await self._gazebo_sleep(self.action_dt)
+
         # get the new observation
         observation, info = await self._async_get_observation()
         pose = await anext(drone.telemetry.position())
 
-        
+    
         
         def _check_terminated(pose):
             # Assume pose is a dict with keys: 'pitch', 'roll', 'relative_altitude', 'x', 'y', 'z'

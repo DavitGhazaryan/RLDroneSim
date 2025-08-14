@@ -7,6 +7,7 @@ import logging
 import xml.etree.ElementTree as ET
 import json
 from typing import Dict, Any
+import threading
 
 
 logger = logging.getLogger("GazeboInterface")
@@ -34,13 +35,16 @@ class GazeboInterface:
         self.gui = config.get('gui', True)
         self.verbose = config.get('verbose', True)
         self.timeout = config.get('timeout', 30.0)
-        
+
         # not used yet
-        self.real_time_factor = config.get('real_time_factor', 1.0)
         self.step_size = config.get('step_size', 0.001)
 
         self.extra_args = config.get('extra_args', [])
-                
+        self.sim_time = 0.0
+        self._timer_lock = threading.Lock()
+
+
+
     def start_simulation(self):
         if self.is_running():
             raise RuntimeError("Gazebo simulation already running")
@@ -71,7 +75,9 @@ class GazeboInterface:
             self._wait_for_startup()
             self.is_started = True
             logger.info("Gazebo simulation started successfully!")
-            
+
+            self._timer_thread = threading.Thread(target=self._timer_thread, daemon=True)
+            self._timer_thread.start()
         except FileNotFoundError:
             logger.error("gz command not found. Please install Gazebo Garden or newer.")
             raise
@@ -98,7 +104,27 @@ class GazeboInterface:
 
         self.stop_simulation()
         raise RuntimeError(f"Gazebo startup timeout after {self.timeout} seconds")
-        
+    
+    def _timer_thread(self):
+        proc = subprocess.Popen(
+            ["gz", "topic", "-e", "--topic", "/clock", "--json-output"],
+            stdout=subprocess.PIPE,
+            text=True
+        )
+        for line in proc.stdout:
+            if not self.is_running():
+                break
+            try:
+                msg = json.loads(line)
+                # You probably want sim time, not system time
+                sec = msg["system"]["sec"]
+                nsec = msg["system"]["nsec"]
+                t = int(sec) + int(nsec)     * 1e-9
+                with self._timer_lock:
+                    self.sim_time = t
+            except json.JSONDecodeError:
+                continue
+
     def stop_simulation(self):
         if self.process is None:
             return
@@ -121,13 +147,8 @@ class GazeboInterface:
         
         self.process = None
         self.is_started = False
+        self._timer_thread.join(timeout=1)
         logger.info("Gazebo simulation stopped.")
-    
-    def restart_simulation(self):
-        logger.info("Restarting Gazebo simulation...")
-        self.stop_simulation()
-        time.sleep(3)
-        self.start_simulation()
     
     def is_running(self) -> bool:
         return self.process is not None and self.process.poll() is None
@@ -212,80 +233,9 @@ class GazeboInterface:
             logger.error(f"❌ Failed to resume simulation: {e.stderr.decode()}")
             raise RuntimeError("Gazebo resume service failed.")
    
-    def get_simulation_time(self) -> float:
-        try:
-            result = subprocess.check_output(
-                [
-                    "gz", "topic",
-                    "-e", f"/world/{self.world_name}/clock"
-                ],
-                timeout=2
-            )
-            msg = json.loads(result.decode("utf-8"))
-            sec = msg["sim"]["sec"]
-            nsec = msg["sim"]["nsec"]
-            sim_time = sec + nsec * 1e-9
-            logger.debug(f"⏱️  Simulation time: {sim_time:.3f} seconds")
-            return sim_time
-        except Exception as e:
-            logger.warning(f"⚠️  Failed to get simulation time: {e}")
-            return -1.0
-
-    # def get_model_pose(self, model_name: str) -> Dict[str, float]:
-    #     import math
-    #     """
-    #     Get the pose of a model from /world/<world_name>/pose/info topic.
-
-    #     Don't use this function for reward calculation as you have GPS.
-    #     """
-    #     try:
-    #         output = subprocess.check_output(
-    #             [
-    #                 "gz", "topic", "-e",
-    #                 "-n", "1",  # receive only 1 message
-    #                 "--topic", f"/world/{self.world_name}/pose/info"
-    #             ],
-    #             timeout=5
-    #         )
-    #         msg = json.loads(output.decode("utf-8"))
-    #         for pose in msg.get("pose", []):
-    #             if pose.get("name") == model_name:
-    #                 pos = pose["position"]
-    #                 rot = pose["orientation"]
-
-    #                 # Quaternion → Euler
-    #                 qx, qy, qz, qw = rot["x"], rot["y"], rot["z"], rot["w"]
-
-    #                 t0 = +2.0 * (qw * qx + qy * qz)
-    #                 t1 = +1.0 - 2.0 * (qx * qx + qy * qy)
-    #                 roll = math.atan2(t0, t1)
-
-    #                 t2 = +2.0 * (qw * qy - qz * qx)
-    #                 t2 = max(min(t2, 1.0), -1.0)
-    #                 pitch = math.asin(t2)
-
-    #                 t3 = +2.0 * (qw * qz + qx * qy)
-    #                 t4 = +1.0 - 2.0 * (qy * qy + qz * qz)
-    #                 yaw = math.atan2(t3, t4)
-
-    #                 return {
-    #                     "x": pos["x"],
-    #                     "y": pos["y"],
-    #                     "z": pos["z"],
-    #                     "roll": roll,
-    #                     "pitch": pitch,
-    #                     "yaw": yaw
-    #                 }
-
-    #         logger.warning(f"Model '{model_name}' not found in pose info.")
-    #         return {}
-
-    #     except subprocess.TimeoutExpired:
-    #         logger.error("Timeout while querying model pose.")
-    #         return {}
-    #     except Exception as e:
-    #         logger.error(f"Failed to get model pose: {e}")
-    #         return {}
+    def get_sim_time(self) -> float:
+        with self._timer_lock:
+            return self.sim_time
 
     def close(self):
         self.stop_simulation()
