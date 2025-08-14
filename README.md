@@ -26,9 +26,9 @@ pid_rl/
 └── tests/                     # Interface tests and simple scripts
 ```
 
-## Setup
+## Setup for Ubuntu 22.04
 
-This project uses Docker for easy deployment and consistent environment setup. The configuration has been tested on Linux host machines with NVIDIA GPU support.
+This project uses Docker for easy deployment and consistent environment setup. The configuration has been tested on Ubuntu 22.04 host machines with NVIDIA GPU support.
 
 ### Prerequisites
 
@@ -65,6 +65,40 @@ This project uses Docker for easy deployment and consistent environment setup. T
    docker exec -it pid_rl_container bash
    ```
 
+## Setup for Windows with WSLG
+
+This section describes how to set up the project on Windows using WSLG (Windows Subsystem for Linux GUI) for GUI applications.
+
+### Prerequisites
+
+- Windows 11 with WSL2 and WSLG enabled
+- Docker Desktop for Windows installed
+- WSL2 distribution (Ubuntu 22.04 recommended)
+- WSLG support enabled
+
+### Installation Steps
+
+1. **Clone the repository inside your WSL environment**
+   ```bash
+   git clone git@github.com:GorArzanyanAUA/pid_rl.git
+   cd pid_rl
+   ```
+
+2. **Build the Docker container using the WSLG-specific compose file**
+   ```bash
+   DOCKER_BUILDKIT=1 docker compose -f docker-compose-wslg.yml build
+   ```
+
+3. **Start the container in detached mode**
+   ```bash
+   docker compose -f docker-compose-wslg.yml up -d
+   ```
+
+4. **Enter the container**
+   ```bash
+   docker exec -it pid_rl_container bash
+   ```
+
 ### Verification Tests
 
 Once inside the container, run these tests to verify the setup:
@@ -88,4 +122,5 @@ Once inside the container, run these tests to verify the setup:
 
 - **Different host OS**: The Dockerfile should work on any machine, but you may need to modify `docker-compose.yml` for non-Linux systems
 - **GPU compatibility**: If you encounter CUDA version issues, update the CUDA version in the Dockerfile to match your GPU
-- **GUI issues**: Ensure X11 forwarding is properly configured for your system
+- ****: If you encounter CUDA version issues, update the CUDA version in the Dockerfile to match your GPU
+b07cc04124 Copter: PR feedback

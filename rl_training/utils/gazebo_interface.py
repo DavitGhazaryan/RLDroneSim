@@ -290,13 +290,6 @@ class GazeboInterface:
     def close(self):
         self.stop_simulation()
     
-    def __enter__(self):
-        self.start_simulation()
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close() 
-
     def _parse_world_name(self, sdf_path: str) -> str:
         try:
             tree = ET.parse(sdf_path)

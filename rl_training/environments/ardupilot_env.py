@@ -66,16 +66,25 @@ class ArdupilotEnv(gym.Env):
         self.action_space = self._define_action_space()
         
     def _define_observation_space(self):
-        """Needs to be updated to allow different observation spaces"""
-        low = np.full(len(self.observable_gains) + len(self.observable_states), -np.inf, dtype=np.float32)
-        high = np.full(len(self.observable_gains) + len(self.observable_states), np.inf, dtype=np.float32)
-        return spaces.Box(low=low, high=high, dtype=np.float32)
+        """
+        Observations are of two parts: observable gains and observable states
+        They should be stored as a dict with keys: observable_gains and observable_states
+        """
+        dictionary = spaces.Dict()
+        for observable_gain in self.observable_gains:
+            dictionary[observable_gain] = spaces.Box(low=0, high=100, dtype=np.float32)
+        for observable_state in self.observable_states:
+            dictionary[observable_state] = spaces.Box(low=-np.inf, high=np.inf, dtype=np.float32)
+        return dictionary
     
     def _define_action_space(self):
-        """Needs to be updated to allow different action spaces"""
-        low = np.array([-0.1] * len(self.action_gains), dtype=np.float32)
-        high = np.array([0.1] * len(self.action_gains), dtype=np.float32)
-        return spaces.Box(low=low, high=high, dtype=np.float32)
+        """
+        Action space is a dictionary with keys: action_gains
+        """
+        dictionary = spaces.Dict()
+        for action_gain in self.action_gains:
+            dictionary[action_gain] = spaces.Box(low=-0.5, high=0.5, dtype=np.float32)
+        return dictionary
 
     def reset(self, seed=None, options=None):
         """Reset the environment to initial state."""
@@ -101,16 +110,12 @@ class ArdupilotEnv(gym.Env):
             self.initial_pose = self.loop.run_until_complete(self.sitl.get_pose_async())
             self._async_mission_function = self._setup_mission()
             self.loop.run_until_complete(self._async_mission_function())
-            # self.old_observation = None
         else:
-            self.gazebo.transport_position(self.sitl.name, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+            initial_pose, initial_orientation = self.get_random_initial_state()
+            self.gazebo.transport_position(self.sitl.name, initial_pose, initial_orientation)
         
-        observed_gains, observed_states, info = self.loop.run_until_complete(self._async_get_observation())
+        observation, info = self.loop.run_until_complete(self._async_get_observation())
 
-        observation = np.concatenate([
-            np.array([observed_gains[k] for k in observed_gains], dtype=np.float32),
-            np.array([observed_states[k] for k in observed_states], dtype=np.float32)
-        ])
         return observation, info  # observation, info
 
     async def _async_get_observation(self):
@@ -119,19 +124,14 @@ class ArdupilotEnv(gym.Env):
         This function is called when the environment is reset.
         """
         drone = await self.sitl._get_mavsdk_connection()
-
-        observed_gains = {
-            variable: await drone.param.get_param_float(variable)
-            for variable in self.observable_gains                 # all PID names are longer than 3 characters
-        }
+        observation = {}
+        for observable_gain in self.observable_gains:
+            observation[observable_gain] = await drone.param.get_param_float(observable_gain)
         position = await anext(drone.telemetry.position())
-
-        observed_states = {
-            variable: getattr(position, variable)
-            for variable in self.observable_states
-        }
-
-        return observed_gains, observed_states, {}  # observation, info
+        for observable_state in self.observable_states:
+            observation[observable_state] = getattr(position, observable_state)
+        info = {}
+        return observation, info 
     
     def _setup_mission(self):
         match self.config['environment_config']['mode']:
@@ -142,7 +142,14 @@ class ArdupilotEnv(gym.Env):
             case _:
                 raise ValueError(f"Invalid mode: {self.config['environment_config']['mode']}")
     
-    def step(self, action   ):
+    # async def _action_time_delay(self):
+
+
+    def get_random_initial_state(self):
+        # TODO
+        return (0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0)
+    
+    def step(self, action):
         self.episode_step += 1
         obs, reward, done, truncated, info = self.loop.run_until_complete(self._async_step(action))
         # self.old_observation = obs
@@ -160,17 +167,17 @@ class ArdupilotEnv(gym.Env):
             variable: await drone.param.get_param_float(variable)
             for variable in self.action_gains                }
         
-        print(f"Action: {action}")
         # apply the action to the new gains and set them
-        for i, var in enumerate(self.action_gains):
-            new_gains[var] += action[i]
+        for var in self.action_gains:
+            new_gains[var] += action[var]
             await drone.param.set_param_float(var, new_gains[var])
-            
+        ### TO DO
+        await asyncio.sleep(2)
+        
         # get the new observation
-        observed_gains, observed_states, info = await self._async_get_observation()
+        observation, info = await self._async_get_observation()
         pose = await anext(drone.telemetry.position())
-        # compute the reward
-        reward = await self._compute_reward(pose)
+
         
         
         def _check_terminated(pose):
@@ -212,13 +219,10 @@ class ArdupilotEnv(gym.Env):
         else:
             terminated = False
             truncated = self.episode_step >= self.max_episode_steps
-        observation = np.concatenate([
-            np.array([observed_gains[k] for k in observed_gains], dtype=np.float32),
-            np.array([observed_states[k] for k in observed_states], dtype=np.float32)
-        ])
 
-        info = {}
-        print(f"Observation: {observation}")
+        reward = await self._compute_reward(pose)
+        # info modify
+        
         return observation, reward, terminated, truncated, info
 
     async def _async_arm(self):

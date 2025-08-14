@@ -95,12 +95,14 @@ RUN USER=ardupilot ./Tools/environment_install/install-prereqs-ubuntu.sh -y && \
 USER root
 WORKDIR /home/pid_rl
 
-# Clone and build ArduPilot-Gazebo plugin
+# Clone and build ArduPilot-Gazebo plugin  (worked with commit b07cc04124 Copter: PR feedback)
 RUN git clone https://github.com/ArduPilot/ardupilot_gazebo.git && \
     cd ardupilot_gazebo && \
     mkdir build && cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo && \
     make -j$(nproc)
+
+
 
 # Set Gazebo environment variables
 ENV GZ_VERSION=harmonic

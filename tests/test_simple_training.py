@@ -7,7 +7,10 @@ def main():
     config = load_config('/home/pid_rl/rl_training/configs/default_config.yaml')
     
     env = ArdupilotEnv(config)
-
+    print(env.observation_space)
+    print(env.action_space)
+    print(env.action_space.sample())
+    # print(env.reset())
     # agent = PPOAgent(config)
     # agent.setup(env)
     

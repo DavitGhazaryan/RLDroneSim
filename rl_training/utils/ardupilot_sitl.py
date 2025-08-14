@@ -126,29 +126,6 @@ class ArduPilotSITL:
         logger.info("SITL started successfully.")
 
     # Mode Setting
-    async def _set_mode_async(self, mode_name: str, timeout: float = 10.0) -> bool:
-        """
-        Async mode setting method that doesn't block event loop.
-        
-        Args:
-            mode_name: Name of the mode
-            timeout: Timeout in seconds
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if not self.is_running():
-            logger.error("SITL not running, cannot set mode")
-            return False
-            
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            self._thread_executor, 
-            self._set_mode_sync, 
-            mode_name, 
-            timeout
-        )
-
     def _set_mode_sync(self, mode_name: str, timeout: float = 10.0) -> bool:
         """
         Synchronous mode setting using pymavlink (for use in thread executor).
@@ -259,11 +236,6 @@ class ArduPilotSITL:
             'uptime_s':     time.time() - p.create_time()
         }
         
-        # Add current mode if available
-        current_mode = self.get_mode()
-        if current_mode:
-            info['current_mode'] = current_mode
-            
         return info
 
     def stop_sitl(self):
