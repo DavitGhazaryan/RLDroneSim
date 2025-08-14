@@ -338,7 +338,7 @@ class ArduPilotSITL:
         if self.instance    is not None: cmd += ['-I', str(self.instance)]
         if self.count       is not None: cmd += ['-n', str(self.count)]
         if self.location_str:            cmd += ['-l', self.location_str]
-        if self.speedup    is not None:  cmd += ['-S', str(self.speedup)]
+        if self.speedup    is not None:  cmd += ['--speedup', str(self.speedup)]
         if self.model                   : cmd += ['--model', self.model]
         if self.wipe                    : cmd.append('-w')
         if self.use_dir                 : cmd += ['--use-dir', self.use_dir]

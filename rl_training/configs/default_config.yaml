@@ -10,8 +10,7 @@ environment_config:
   action_gains: "PSC_POSZ_P+PSC_VELZ_P" 
   reward_function: "error" 
   action_dt: 0.1
-  speed_up: 10.0
-  
+
 # ArduPilot SITL configuration
 ardupilot_config:
   ardupilot_path: "/home/pid_rl/ardupilot"           # Path to ArduPilot directory
@@ -22,7 +21,7 @@ ardupilot_config:
   instance:  0                                                   # Instance number
   count: null                                                    # Number of instances
   location: null                                                 # Home location lat,lon,alt,yaw
-  speedup: 1                                                     # Simulation speed multiplier
+  speedup: 5                                                     # Simulation speed multiplier
   wipe_eeprom: true                                              # Wipe EEPROM on startup
   use_dir: null                                                  # Use directory for SITL
   delay_start: null                                              # Delay startup by this many seconds
