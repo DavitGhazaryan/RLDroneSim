@@ -1,0 +1,70 @@
+# Ignore everything by default
+/*
+
+# Only track these files and folders:
+!.gitignore
+!rl_training/
+!tests/
+!README.md
+!simple_world.sdf
+!docker-compose.yml
+!docker-compose-wslg.yml
+!Dockerfile
+!requirements.txt
+!run-native.sh
+!run-wsl.sh
+!Makefile
+
+# Python bytecode and cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Python virtual environments
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# Python package distribution
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+bin/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
