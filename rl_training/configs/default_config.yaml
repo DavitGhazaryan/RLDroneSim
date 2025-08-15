@@ -23,7 +23,7 @@ ardupilot_config:
   instance:  0                                                   # Instance number
   count: null                                                    # Number of instances
   location: null                                                 # Home location lat,lon,alt,yaw
-  speedup: 7                                                     # Simulation speed multiplier
+  speedup: 2                                                   # Simulation speed multiplier
   wipe_eeprom: true                                              # Wipe EEPROM on startup
   use_dir: null                                                  # Use directory for SITL
   delay_start: null                                              # Delay startup by this many seconds

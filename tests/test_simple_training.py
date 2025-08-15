@@ -14,14 +14,13 @@ def main():
     # agent = PPOAgent(config)
     # agent.setup(env)
     
-    total_episodes = 2
-    max_steps_per_episode = 5
+    total_episodes = 20
+    max_steps_per_episode = 30
     
     for episode in range(total_episodes):
         obs, info = env.reset()
         print(f"Observation: {obs}")
         episode_reward = 0.0
-        print(f"Episode {episode}: Reward = {episode_reward:.2f}")
         for step in range(max_steps_per_episode):
             # Get action from agent
             # action = agent.predict(obs, deterministic=False)
@@ -29,14 +28,14 @@ def main():
             action = env.action_space.sample()
 
             # Take step in environment
-            next_obs, reward, done, truncated, info = env.step(action)
+            next_obs, reward, terminated, truncated, info = env.step(action)
             
             # Update episode statistics
             episode_reward += reward
             obs = next_obs
-            
-            if done or truncated:
-                print(f"Episode {episode}: Done = {done}, Truncated = {truncated}")
+            print(f"Observation: {obs}")
+            if terminated or truncated:
+                print(f"Episode Finished: Info = {info}")
                 break
         
         # Log episode results
