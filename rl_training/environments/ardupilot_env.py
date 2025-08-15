@@ -8,14 +8,11 @@ import logging
 import sys
 import asyncio
 
-# from gz.msgs10.pose_v_pb2 import Pose_V
-# from gz.transport13 import Node
-
 sys.path.insert(0, "/home/student/Dev/pid_rl")
 
 from rl_training.utils.gazebo_interface import GazeboInterface
 from rl_training.utils.ardupilot_sitl import ArduPilotSITL
-from rl_training.utils.utils import load_config
+from rl_training.utils.utils import euler_to_quaternion, lat_lon_to_xy_meters, xy_meters_to_lat_lon
 
 logger = logging.getLogger("Env")
 logger.setLevel(logging.INFO)
@@ -57,10 +54,14 @@ class ArdupilotEnv(gym.Env):
         self.observable_states = self.environment_config['observable_states'].split('+')
         self.action_gains = self.environment_config['action_gains'].split('+')
         self.max_episode_steps = self.environment_config.get('max_episode_steps', 100)
-        self.initial_pose = None
+        self.origin_pose = None       # {latitude_deg:, longitude_deg:, relative_altitude_m:}
+        self.initial_pose = None       # {latitude_deg:, longitude_deg:, relative_altitude_m:}
+        self.initial_attitude = None   # {pitch_deg:, roll_deg:, yaw_deg:}
         # self.old_observation = None    # old observation is stored as a dict
         self._async_mission_function = None
         self.action_dt = self.environment_config.get('action_dt', 1.0)
+        self.goal_orientation = None   # {pitch_deg:, roll_deg:, yaw_deg:}
+        self.goal_pose = None          # {latitude_deg:, longitude_deg:, relative_altitude_m:}
 
         # Initialize spaces
         self.observation_space = self._define_observation_space()
@@ -108,16 +109,38 @@ class ArdupilotEnv(gym.Env):
             ## Resetting Ends Here: Drone is Armed
 
             ## Setup Mission
-            self.initial_pose = self.loop.run_until_complete(self.sitl.get_pose_async())
+            pose = self.loop.run_until_complete(self.sitl.get_pose_async())
+            self.origin_pose = {
+                'latitude_deg': pose.latitude_deg,
+                'longitude_deg': pose.longitude_deg,
+                'absolute_altitude_m': pose.absolute_altitude_m,
+                'relative_altitude_m': pose.relative_altitude_m
+            }
+            self.initial_pose = {
+                'latitude_deg': pose.latitude_deg,
+                'longitude_deg': pose.longitude_deg,
+                'relative_altitude_m': pose.relative_altitude_m
+            }
+            attitude = self.loop.run_until_complete(self.sitl.get_attitude_async())
+            self.initial_attitude = {
+                'pitch_deg': attitude.pitch_deg,
+                'roll_deg': attitude.roll_deg,
+                'yaw_deg': attitude.yaw_deg
+            }
+
             self._async_mission_function = self._setup_mission()
             self.loop.run_until_complete(self._async_mission_function())
         else:
-            initial_pose, initial_orientation = self.get_random_initial_state()
-            self.gazebo.transport_position(self.sitl.name, initial_pose, initial_orientation)
+            self.initial_pose, self.initial_attitude = self.get_random_initial_state()
+
+            #TODO  Position needs to be moved to odometry
+            # self.gazebo.transport_position(self.sitl.name, self.initial_pose, self.initial_attitude)
+            # new_xy = lat_lon_to_xy_meters(self.origin_pose, self.initial_pose['latitude_deg'], self.initial_pose['longitude_deg'])
+            self.gazebo.transport_position(self.sitl.name, [0, 0, self.initial_pose['relative_altitude_m']], euler_to_quaternion(self.initial_attitude))
         
         observation, info = self.loop.run_until_complete(self._async_get_observation())
-
         return observation, info  # observation, info
+
 
     async def _async_get_observation(self):
         """
@@ -137,7 +160,15 @@ class ArdupilotEnv(gym.Env):
     def _setup_mission(self):
         match self.config['environment_config']['mode']:
             case 'altitude':
+                self.takeoff_altitude = self.config['environment_config']['takeoff_altitude']
+                self.goal_pose = {
+                    'latitude_deg': self.initial_pose['latitude_deg'],
+                    'longitude_deg': self.initial_pose['longitude_deg'],
+                    'relative_altitude_m': self.takeoff_altitude
+                }
+                self.goal_orientation = self.initial_attitude.copy()
                 return self._async_takeoff
+            
             case 'position' | 'attitude' | 'stabilize' | 'althold':
                 raise NotImplementedError("Position, attitude, stabilize, and althold modes are not implemented yet")
             case _:
@@ -146,8 +177,8 @@ class ArdupilotEnv(gym.Env):
     # async def _action_time_delay(self):
     
     def get_random_initial_state(self):
-        # TODO
-        return (0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0)
+        # TODO: Implement random initial state
+        return self.initial_pose, self.initial_attitude
     
     def step(self, action):
         self.episode_step += 1
@@ -155,16 +186,6 @@ class ArdupilotEnv(gym.Env):
         # self.old_observation = obs
         return obs, reward, done, truncated, info
 
-    async def _gazebo_sleep(self, duration):
-        """
-        Sleep for the given duration (in seconds) using Gazebo simulation time.
-        """
-        start_time = self.gazebo.get_sim_time()
-        while True:
-            await asyncio.sleep(0.0001)
-            current_time = self.gazebo.get_sim_time()
-            if current_time - start_time >= duration:
-                break
 
     async def _async_step(self, action):
         """
@@ -183,22 +204,21 @@ class ArdupilotEnv(gym.Env):
             new_gains[var] += action[var]
             await drone.param.set_param_float(var, new_gains[var].item())
 
-        await self._gazebo_sleep(self.action_dt)
+        await self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
 
         # get the new observation
         observation, info = await self._async_get_observation()
         pose = await anext(drone.telemetry.position())
-
-    
+        attitude = await anext(drone.telemetry.attitude_euler())
+        print(f"Pose: {pose}, attitude: {attitude}")
         
-        def _check_terminated(pose):
-            # Assume pose is a dict with keys: 'pitch', 'roll', 'relative_altitude', 'x', 'y', 'z'
-            # 1. Crash: very big pitch or roll (e.g., > 60 deg)
-            
-            # pitch = abs(getattr(pose, 'pitch', pose.get('pitch', 0)))
-            # roll = abs(getattr(pose, 'roll', pose.get('roll', 0)))
-            # print(f"Pitch: {pitch}, Roll: {roll}")
-            # if pitch > 60 or roll > 60:
+        print(f"Goal Pose: {self.goal_pose}, Goal Attitude: {self.goal_orientation}")
+        print(f"Initial Pose: {self.initial_pose}, Initial Attitude: {self.initial_attitude}")
+
+        def _check_terminated(pose, attitude):
+            # Assume pose is a dict with keys: [latitude_deg:, longitude_deg:, absolute_altitude_m:, relative_altitude_m:]
+            # 1. Crash: the difference between current and target attitude s is more that 30 degree
+            # if abs(attitude.pitch_deg - self.goal_orientation.pitch_deg) > 30 or abs(attitude.roll_deg - self.goal_orientation.roll_deg) > 30:
             #     return True, "crash: excessive pitch/roll"
 
             # # # 2. About to hit ground (relative_altitude < 0.1m)
@@ -224,14 +244,15 @@ class ArdupilotEnv(gym.Env):
 
             return False
 
-        terminated = _check_terminated(pose)
+        # terminated = _check_terminated(pose, attitude)
+        terminated = False
         if terminated:
             truncated = False
         else:
             terminated = False
             truncated = self.episode_step >= self.max_episode_steps
 
-        reward = await self._compute_reward(pose)
+        reward =  self._compute_reward(pose)
         # info modify
         
         return observation, reward, terminated, truncated, info
@@ -247,16 +268,28 @@ class ArdupilotEnv(gym.Env):
                 break
 
         await drone.action.arm()
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(1/self.sitl.speedup)
 
     async def _async_takeoff(self):
 
         drone = await self.sitl._get_mavsdk_connection()
+        drone.action.set_takeoff_altitude(self.takeoff_altitude)
         await drone.action.takeoff()
-        await asyncio.sleep(5.0)
+        await asyncio.sleep(5/self.sitl.speedup)
 
-    async def _compute_reward(self, pose):
-        await asyncio.sleep(0.0000001)
+    async def _gazebo_sleep(self, duration):
+        """
+        Sleep for the given duration (in seconds) using Gazebo simulation time.
+        """
+        start_time = self.gazebo.get_sim_time()
+        while True:
+            await asyncio.sleep(0.0001)
+            current_time = self.gazebo.get_sim_time()
+            if current_time - start_time >= duration:
+                break
+
+
+    def _compute_reward(self, pose):
         return 0.0
 
     def __compatibility_checks(self):

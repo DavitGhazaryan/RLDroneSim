@@ -104,7 +104,7 @@ class GazeboInterface:
 
         self.stop_simulation()
         raise RuntimeError(f"Gazebo startup timeout after {self.timeout} seconds")
-    
+
     def _timer_thread(self):
         proc = subprocess.Popen(
             ["gz", "topic", "-e", "--topic", "/clock", "--json-output"],
@@ -113,10 +113,10 @@ class GazeboInterface:
         )
         for line in proc.stdout:
             if not self.is_running():
+                logger.debug("Gazebo is not running, stopping timer thread")
                 break
             try:
                 msg = json.loads(line)
-                # You probably want sim time, not system time
                 sec = msg["system"]["sec"]
                 nsec = msg["system"]["nsec"]
                 t = int(sec) + int(nsec)     * 1e-9

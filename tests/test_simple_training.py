@@ -14,7 +14,7 @@ def main():
     # agent = PPOAgent(config)
     # agent.setup(env)
     
-    total_episodes = 5
+    total_episodes = 2
     max_steps_per_episode = 5
     
     for episode in range(total_episodes):
@@ -40,6 +40,7 @@ def main():
                 break
         
         # Log episode results
+        print()
         print(f"Episode {episode}: Reward = {episode_reward:.2f}")
         
         # Save checkpoint every 100 episodes

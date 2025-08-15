@@ -56,7 +56,7 @@ class ArduPilotSITL:
         self.frame           = config.get('frame',   'quad')
 
         # optional
-        self.name             = config.get('name', 'iris_with_gimbal')
+        self.name             = config.get('name')
         self.instance         = config.get('instance', None)
         self.count            = config.get('count', None)
         self.location_str     = config.get('location')
@@ -182,6 +182,11 @@ class ArduPilotSITL:
         drone = await self._get_mavsdk_connection()
         position = await anext(drone.telemetry.position())
         return position
+    
+    async def get_attitude_async(self):
+        drone = await self._get_mavsdk_connection()
+        attitude = await anext(drone.telemetry.attitude_euler())
+        return attitude
     
     def is_running(self) -> bool:
         return bool(self.process and self.process.poll() is None)
