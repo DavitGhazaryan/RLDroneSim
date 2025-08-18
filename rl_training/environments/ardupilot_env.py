@@ -1,8 +1,7 @@
-"""
-Main Ardupilot environment implementing Gymnasium API.
-"""
 import gymnasium as gym
+from gymnasium.utils import seeding
 from gymnasium import spaces
+
 import numpy as np
 import logging
 import sys
@@ -18,17 +17,6 @@ from rl_training.utils.utils import euler_to_quaternion, lat_lon_to_xy_meters, x
 logger = logging.getLogger("Env")
 logger.setLevel(logging.INFO)
 
-PID_KEYS = [
-    # Not Complete
-    "ATC_ANG_PIT_P",     # Attitude angle PID Gains
-    "ATC_ANG_RLL_P",
-    "ATC_ANG_YAW_P",
-    "ATC_RAT_PIT_P",     # Attitude rate PID Gains
-    "ATC_RAT_RLL_P",
-    "ATC_RAT_YAW_P",
-    "PSC_POSZ_P",       # Position Z PID Gains
-    "PSC_VELZ_P",       # Velocity Z PID Gains
-]
 
 class ArdupilotEnv(gym.Env):
     """
@@ -38,6 +26,8 @@ class ArdupilotEnv(gym.Env):
     
     def __init__(self, config):
         super().__init__()
+        self.np_random, _ = seeding.np_random(None)  # init
+
         self.config = config
 
         self.__compatibility_checks()
@@ -73,31 +63,106 @@ class ArdupilotEnv(gym.Env):
         self.observation_space = self._define_observation_space()
         self.action_space = self._define_action_space()
         
+        # Log space information for debugging
+        logger.info(f"🔧 Environment spaces initialized:")
+        logger.info(f"   Observation space: {self.observation_space}")
+        logger.info(f"   Action space: {self.action_space}")
+        logger.info(f"   Observable gains: {self.observable_gains}")
+        logger.info(f"   Observable states: {self.observable_states}")
+        logger.info(f"   Action gains: {self.action_gains}")
+        
+        # Print mapping information
+        obs_mapping = self.get_observation_key_mapping()
+        action_mapping = self.get_action_key_mapping()
+        logger.info(f"   Observation mapping: {obs_mapping}")
+        logger.info(f"   Action mapping: {action_mapping}")
+        
     def _define_observation_space(self):
         """
-        Observations are of two parts: observable gains and observable states
-        They should be stored as a dict with keys: observable_gains and observable_states
+        Observations are flattened into a single Box space for Stable Baselines compatibility.
+        Order: [observable_gains, observable_states]
         """
-        dictionary = spaces.Dict()
-        for observable_gain in self.observable_gains:
-            dictionary[observable_gain] = spaces.Box(low=0, high=100, dtype=np.float32)
-        for observable_state in self.observable_states:
-            dictionary[observable_state] = spaces.Box(low=-np.inf, high=np.inf, dtype=np.float32)
-        return dictionary
+        # Calculate total dimension
+        total_dim = len(self.observable_gains) + len(self.observable_states)
+        
+        # Create bounds arrays
+        lows = []
+        highs = []
+        
+        # Add bounds for gains (0 to 100)
+        for _ in self.observable_gains:
+            lows.append(0.0)
+            highs.append(100.0)
+        
+        # Add bounds for states (-1000 to 1000)
+        for _ in self.observable_states:
+            lows.append(-1000.0)
+            highs.append(1000.0)
+        
+        return spaces.Box(
+            low=np.array(lows, dtype=np.float32),
+            high=np.array(highs, dtype=np.float32),
+            dtype=np.float32
+        )
     
     def _define_action_space(self):
         """
-        Action space is a dictionary with keys: action_gains
+        Action space is flattened into a single Box space for Stable Baselines compatibility.
+        Actions represent PID gain adjustments.
         """
-        dictionary = spaces.Dict()
-        for action_gain in self.action_gains:
-            dictionary[action_gain] = spaces.Box(low=-0.1, high=0.1, dtype=np.float32)
-        return dictionary
+        # Calculate total dimension
+        total_dim = len(self.action_gains)
+        
+        # Create bounds arrays (all actions are -0.1 to 0.1)
+        lows = np.array([-0.1] * total_dim, dtype=np.float32)
+        highs = np.array([0.1] * total_dim, dtype=np.float32)
+        
+        return spaces.Box(
+            low=lows,
+            high=highs,
+            dtype=np.float32
+        )
+
+    def get_observation_key_mapping(self):
+        """Get mapping from observation keys to array indices."""
+        mapping = {}
+        all_keys = self.observable_gains + self.observable_states
+        for i, key in enumerate(all_keys):
+            mapping[key] = i
+        return mapping
+    
+    def get_action_key_mapping(self):
+        """Get mapping from action keys to array indices."""
+        mapping = {}
+        for i, key in enumerate(self.action_gains):
+            mapping[key] = i
+        return mapping
+    
+    def get_observation_description(self):
+        """Get description of what each observation index represents."""
+        description = {}
+        all_keys = self.observable_gains + self.observable_states
+        for i, key in enumerate(all_keys):
+            if i < len(self.observable_gains):
+                description[f"obs_{i}"] = f"Gain: {key}"
+            else:
+                description[f"obs_{i}"] = f"State: {key}"
+        return description
+    
+    def get_action_description(self):
+        """Get description of what each action index represents."""
+        description = {}
+        for i, key in enumerate(self.action_gains):
+            description[f"action_{i}"] = f"Gain adjustment: {key}"
+        return description
 
     def reset(self, seed=None, options=None):
         """Reset the environment to initial state."""
-        super().reset(seed=seed)
-
+        super().reset(seed=seed)             # sets self.np_random
+        if hasattr(self.action_space, "seed"):
+            self.action_space.seed(seed)
+        if hasattr(self.observation_space, "seed"):
+            self.observation_space.seed(seed)
         self.episode_step = 0
 
         if not self.initialized:
@@ -147,24 +212,36 @@ class ArdupilotEnv(gym.Env):
             # new_xy = lat_lon_to_xy_meters(self.origin_pose, self.initial_pose['latitude_deg'], self.initial_pose['longitude_deg'])
             for gain in self.action_gains:
                 self.loop.run_until_complete(self.sitl.set_param_async(gain, self.initial_gains[gain]))
+                print(f"Setting {gain} to {self.initial_gains[gain]}")
             self.gazebo.transport_position(self.sitl.name, [0, 0, self.initial_pose['relative_altitude_m']], euler_to_quaternion(self.initial_attitude))
         
         observation, info = self.loop.run_until_complete(self._async_get_observation())
         return observation, info  # observation, info
 
-
     async def _async_get_observation(self):
         """
-        Get the observations of the environment.
+        Get the observations of the environment as a flattened array.
         This function is called when the environment is reset.
+        Returns flattened observations for Stable Baselines compatibility.
         """
         drone = await self.sitl._get_mavsdk_connection()
-        observation = {}
-        for observable_gain in self.observable_gains:
-            observation[observable_gain] = await drone.param.get_param_float(observable_gain)
+        
+        # Initialize flattened observation array
+        total_dim = len(self.observable_gains) + len(self.observable_states)
+        observation = np.zeros(total_dim, dtype=np.float32)
+        
+        # Fill gains first
+        for i, observable_gain in enumerate(self.observable_gains):
+            gain_value = await drone.param.get_param_float(observable_gain)
+            observation[i] = gain_value
+        
+        # Fill states
         position = await anext(drone.telemetry.position())
-        for observable_state in self.observable_states:
-            observation[observable_state] = getattr(position, observable_state)
+        for i, observable_state in enumerate(self.observable_states):
+            idx = len(self.observable_gains) + i
+            state_value = getattr(position, observable_state)
+            observation[idx] = state_value
+        
         info = {}
         return observation, info 
     
@@ -189,11 +266,11 @@ class ArdupilotEnv(gym.Env):
         # TODO: Implement random initial state
         initial_gains = {}
         for gain in self.action_gains:
-            initial_gains[gain] = np.random.uniform(0.8, 5.2)
+            initial_gains[gain] = self.np_random.uniform(0.8, 5.2)
         return {
             'latitude_deg': self.initial_pose['latitude_deg'],
             'longitude_deg': self.initial_pose['longitude_deg'],    
-            'relative_altitude_m': 1.2 + np.random.uniform(-0.5, 0.5)
+            'relative_altitude_m': 1.2 + self.np_random.uniform(-0.5, 0.5)
             # 'relative_altitude_m': self.initial_pose['relative_altitude_m'] + np.random.uniform(-0.5, 0.5)
         }, self.initial_attitude, initial_gains
     
@@ -205,20 +282,24 @@ class ArdupilotEnv(gym.Env):
 
     async def _async_step(self, action):
         """
-        get ths action which is the changes of that need to be done in the PID params
-        we need to compute the new PID params by adding the action to the old PID params
-        and set them
+        Handle flattened actions for Stable Baselines compatibility.
+        Actions are changes to PID parameters that need to be applied.
         """
         drone = await self.sitl._get_mavsdk_connection()
-        # take the current gains
-        new_gains = {
-            variable: await drone.param.get_param_float(variable)
-            for variable in self.action_gains                }
         
-        # apply the action to the new gains and set them
-        for var in self.action_gains:
-            new_gains[var] += action[var]
-            await drone.param.set_param_float(var, new_gains[var].item())
+        # Validate action dimensions
+        if len(action) != len(self.action_gains):
+            raise ValueError(f"Expected action of length {len(self.action_gains)}, got {len(action)}")
+        
+        # Get current gains
+        new_gains = {}
+        for variable in self.action_gains:
+            new_gains[variable] = await drone.param.get_param_float(variable)
+        
+        # Apply the flattened action to the gains
+        for i, var in enumerate(self.action_gains):
+            new_gains[var] += action[i]
+            await drone.param.set_param_float(var, new_gains[var])
 
         await self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
 
@@ -272,10 +353,16 @@ class ArdupilotEnv(gym.Env):
             terminated = False
             truncated = self.episode_step >= self.max_episode_steps
         reward = self._compute_reward(pose, attitude)
-        # info modify
-        # new_info = observation_info + reason
         
-        return observation, reward, terminated, truncated, reason
+        # Create proper info dictionary
+        info = {
+            'reason': reason,
+            'episode_step': self.episode_step,
+            'stable_time': self.stable_time,
+            'max_stable_time': self.max_stable_time
+        }
+        
+        return observation, reward, terminated, truncated, info
 
     async def _async_arm(self):
         logger.info("Arming...")
@@ -293,7 +380,7 @@ class ArdupilotEnv(gym.Env):
     async def _async_takeoff(self):
 
         drone = await self.sitl._get_mavsdk_connection()
-        drone.action.set_takeoff_altitude(self.takeoff_altitude)
+        await drone.action.set_takeoff_altitude(self.takeoff_altitude)
         await drone.action.takeoff()
         await asyncio.sleep(5/self.sitl.speedup)
 
@@ -402,3 +489,18 @@ class ArdupilotEnv(gym.Env):
         logger.info("Closing environment...")
         self.gazebo.close()
         self.sitl.close()
+
+
+if __name__ == "__main__":
+    from gymnasium.utils.env_checker import check_env, env_reset_passive_checker, env_step_passive_checker, check_step_determinism  
+    from rl_training.utils.utils import load_config
+    config = load_config('/home/pid_rl/rl_training/configs/default_config.yaml')
+
+    env = ArdupilotEnv(config)
+    # check_env(env)
+    # env_reset_passive_checker(env)
+    # env_step_passive_checker(env, env.action_space.sample())
+
+    # ==== Check the step method ====
+    # check_step_determinism(env)
+    env.close()

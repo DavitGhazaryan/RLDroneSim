@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""
-ArduPilot SITL interface for RL training (MAVSDK reset).
-"""
 
 import subprocess
 import time
@@ -12,10 +9,9 @@ import logging
 import atexit
 import threading
 import asyncio
-import math
 import socket
 import concurrent.futures
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from pathlib import Path
 
 from pymavlink import mavutil
@@ -23,7 +19,7 @@ from pymavlink import mavutil
 from mavsdk import System
 
 
-logger = logging.getLogger("SITL")
+logger = logging.getLogger("SITL")  
 logging.basicConfig(level=logging.INFO)
 
 class ArduPilotSITL:
@@ -57,28 +53,28 @@ class ArduPilotSITL:
 
         # optional
         self.name             = config.get('name')
-        self.instance         = config.get('instance', None)
-        self.count            = config.get('count', None)
+        self.instance         = config.get('instance')
+        self.count            = config.get('count')
         self.location_str     = config.get('location')
         self.speedup          = config.get('speedup')
-        self.wipe              = config.get('wipe_eeprom', False)
+        self.wipe              = config.get('wipe_eeprom')
         self.use_dir           = config.get('use_dir')
         self.delay_start       = config.get('delay_start')
         self.model             = config.get('model')
-        self.clean             = config.get('clean', True)
-        self.no_rebuild        = config.get('no_rebuild', True)
-        self.no_configure      = config.get('no_configure', True)
-        self.no_mavproxy       = config.get('no_mavproxy', False)
-        self.udp               = config.get('udp', True)
+        self.clean             = config.get('clean')
+        self.no_rebuild        = config.get('no_rebuild')
+        self.no_configure      = config.get('no_configure')
+        self.no_mavproxy       = config.get('no_mavproxy')
+        self.udp               = config.get('udp')
         self.udp_out           = config.get('udp_out')
-        self.map               = config.get('map', False)
-        self.console           = config.get('console', False)
+        self.map               = config.get('map')
+        self.console           = config.get('console')
         self.mavproxy_args     = config.get('mavproxy_args')
-        self.timeout           = config.get('timeout', 30.0)
-        self.min_startup_delay = config.get('min_startup_delay', 5.0)
-        self.master_port       = config.get('master_port', 14551)  # Configurable MAVLink port
-        self.mavsdk_port       = config.get('mavsdk_port', 14550)  # Configurable MAVSDK port
-        self.port_check_timeout = config.get('port_check_timeout', 30.0)  # Timeout for port availability
+        self.timeout           = config.get('timeout')
+        self.min_startup_delay = config.get('min_startup_delay')
+        self.master_port       = config.get('master_port')  # Configurable MAVLink port
+        self.mavsdk_port       = config.get('mavsdk_port')  # Configurable MAVSDK port
+        self.port_check_timeout = config.get('port_check_timeout')  # Timeout for port availability
 
         # parse home location
         if self.location_str:
@@ -113,8 +109,6 @@ class ArduPilotSITL:
         self._wait_for_startup()      # ensures that the process is running and the port(s) are available
         self._track_child_processes()
 
-
-        ### establish connections
         logger.info("Establishing connections...")
         self._get_mavlink_connection()
         logger.info("MAVLink connection established")
@@ -176,7 +170,6 @@ class ArduPilotSITL:
         except Exception as e:
             logger.error(f"Failed to set mode {mode_name}: {e}")
             return False
-
 
     async def set_param_async(self, param_name: str, value: float):
         drone = await self._get_mavsdk_connection()
@@ -368,7 +361,6 @@ class ArduPilotSITL:
     def _start_log_threads(self):
         assert self.process is not None
         def reader(pipe, level):
-
             try:
                 while not self._shutdown_event.is_set():
                     line = pipe.readline()
@@ -400,7 +392,7 @@ class ArduPilotSITL:
         logger.info("   ")
         
         start = time.time()
-        # First, wait minimum delay
+
         while time.time() - start < self.min_startup_delay:
             if self.process.poll() is not None:
                 out, err = self.process.communicate(timeout=1)
@@ -408,9 +400,11 @@ class ArduPilotSITL:
             time.sleep(0.5)
         logger.debug(f"Minimum startup delay of {self.min_startup_delay}s completed")
         
+        
+        # Wait for the ports to become available
+
         # Wait for the ports to become available
         if not self._wait_for_ports():
-            # Still check if process crashed
             if self.process.poll() is not None:
                 out, err = self.process.communicate(timeout=1)
                 raise RuntimeError(f"SITL crashed while waiting for ports:\n{err.decode()}\n{out.decode()}")
@@ -418,19 +412,14 @@ class ArduPilotSITL:
                 raise TimeoutError(f"Ports are not available after {self.port_check_timeout}s, but SITL process is still running")
         
     def _wait_for_ports(self) -> bool:
-        """
-        Wait for MAVLink port to become available by polling.
-        
-        Returns:
-            bool: True if port became available, False if timeout
-        """
-        logger.info("   ")
-        logger.info(f"Waiting for Master port {self.master_port} to become available...")
+
+        logger.debug("   ")
+        logger.debug(f"Waiting for Master port {self.master_port} to become available...")
         ports_available = False
         start_time = time.time()
         while time.time() - start_time < self.port_check_timeout:
             if self._check_port_available(port=self.master_port):
-                logger.info(f"Master port {self.master_port} is now available")
+                logger.debug(f"Master port {self.master_port} is now available")
                 ports_available = True
                 break
             time.sleep(0.5)
@@ -438,12 +427,12 @@ class ArduPilotSITL:
             logger.error(f"Master port {self.master_port} did not become available within {self.port_check_timeout}s")
             return False
 
-        logger.info(f"Waiting for MAVSDK port {self.mavsdk_port} to become available...")
+        logger.debug(f"Waiting for MAVSDK port {self.mavsdk_port} to become available...")
         ports_available = False
         start_time = time.time()
         while time.time() - start_time < self.port_check_timeout:
             if self._check_port_available(port=self.mavsdk_port):
-                logger.info(f"MAVSDK port {self.mavsdk_port} is now available")
+                logger.debug(f"MAVSDK port {self.mavsdk_port} is now available")
                 ports_available = True
                 break
             time.sleep(0.5)

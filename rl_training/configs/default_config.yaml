@@ -1,6 +1,3 @@
-# Default configuration for Ardupilot RL training
-
-
 # Environment configuration
 environment_config:
   max_episode_steps: 10
@@ -8,13 +5,13 @@ environment_config:
   observable_gains: "PSC_POSZ_P+PSC_VELZ_P"
   observable_states: "relative_altitude_m"
   action_gains: "PSC_POSZ_P+PSC_VELZ_P" 
-  reward_function: "error" 
-  action_dt: 0.1
+  reward_function: "error"   # error, waypoint, pid_tuning, custom (corresponds to the sections in reward_config: based on this RewardClass is defined)
+  action_dt: 1               # interval between action and its observation
   takeoff_altitude: 2.5
 
 # ArduPilot SITL configuration
 ardupilot_config:
-  ardupilot_path: "/home/pid_rl/ardupilot"           # Path to ArduPilot directory
+  ardupilot_path: "/home/pid_rl/ardupilot"                       # Path to ArduPilot directory
   vehicle: "ArduCopter"                                          # Vehicle type (copter, plane, rover)
   frame: "gazebo-iris"                                           # Vehicle model for Gazebo integration
   name: "iris_with_ardupilot"
@@ -23,7 +20,7 @@ ardupilot_config:
   instance:  0                                                   # Instance number
   count: null                                                    # Number of instances
   location: null                                                 # Home location lat,lon,alt,yaw
-  speedup: 2                                                   # Simulation speed multiplier
+  speedup: 10                                                   # Simulation speed multiplier
   wipe_eeprom: true                                              # Wipe EEPROM on startup
   use_dir: null                                                  # Use directory for SITL
   delay_start: null                                              # Delay startup by this many seconds
@@ -35,20 +32,45 @@ ardupilot_config:
   udp: true                                                      # Use UDP for communication
   map: false                                                     # Use map for navigation
   console: false                                                 # Use console for debugging
-  mavproxy_args: null                                            # Additional MAVProxy arguments
+  mavproxy_args: null
   timeout: 30.0                                                  # SITL startup timeout
   min_startup_delay: 5.0                                         # Assume ready after this many seconds
   mavsdk_port: 14550                                             # MAVSDK connection port 
   master_port: 14551                                             # MAVLink master port for low level communication (same as udp_out)
+  port_check_timeout: 30.0                                       # Timeout for checking if ports are available
 
 # Gazebo configuration
 gazebo_config:
   sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  
   gui: true       
-  step_size: 0.001       # Physics step size in seconds
-  timeout: 15.0          # Startup timeout in seconds
+  timeout: 10.0
   verbose: false         # Verbosity level
 
+# # Reward function configuration // Letter the different terms in the reward function can be controlled here, comment out the ones you don't want to use or put 0
+# reward_config:
+#   hover:
+#     target_position: [0.0, 0.0, 10.0]
+#     position_weight: 1.0
+#     velocity_weight: 0.1
+#     attitude_weight: 0.5
+#     action_weight: 0.01
+#     crash_penalty: -100.0
+  
+#   waypoint:
+#     waypoints: [[10.0, 0.0, 10.0], [0.0, 10.0, 10.0], [0.0, 0.0, 10.0]]
+#     position_weight: 1.0
+#     velocity_weight: 0.1
+#     waypoint_reached_reward: 100.0
+#     crash_penalty: -100.0
+#     waypoint_threshold: 5.0
+  
+#   pid_tuning:
+#     setpoint: [0.0, 0.0, 10.0, 0.0]
+#     error_weight: 1.0
+#     overshoot_penalty: 0.5
+#     settling_time_weight: 0.1
+#     crash_penalty: -100.0
+#     settling_threshold: 0.1
 
 # # TD3 algorithm parameters
 # td3_params:
@@ -92,32 +114,6 @@ gazebo_config:
 #   - type: "checkpoint"
 #     save_freq: 50000
 #     save_path: "./checkpoints"
-
-# # Reward function configuration
-# reward_config:
-#   hover:
-#     target_position: [0.0, 0.0, 10.0]
-#     position_weight: 1.0
-#     velocity_weight: 0.1
-#     attitude_weight: 0.5
-#     action_weight: 0.01
-#     crash_penalty: -100.0
-  
-#   waypoint:
-#     waypoints: [[10.0, 0.0, 10.0], [0.0, 10.0, 10.0], [0.0, 0.0, 10.0]]
-#     position_weight: 1.0
-#     velocity_weight: 0.1
-#     waypoint_reached_reward: 100.0
-#     crash_penalty: -100.0
-#     waypoint_threshold: 5.0
-  
-#   pid_tuning:
-#     setpoint: [0.0, 0.0, 10.0, 0.0]
-#     error_weight: 1.0
-#     overshoot_penalty: 0.5
-#     settling_time_weight: 0.1
-#     crash_penalty: -100.0
-#     settling_threshold: 0.1
 
 # # Evaluation configuration
 # evaluation_config:
