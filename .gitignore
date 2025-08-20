@@ -7,6 +7,8 @@
 !tests/
 !README.md
 !simple_world.sdf
+!scripts/    
+!examples/
 !docker-compose.yml
 !docker-compose-wslg.yml
 !Dockerfile

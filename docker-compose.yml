@@ -25,6 +25,7 @@ services:
       - ./tests:/home/pid_rl/tests
       - ./requirements.txt:/home/pid_rl/requirements.txt
       - ./simple_world.sdf:/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf
+      - ./scripts:/home/pid_rl/ardupilot/scripts
     devices:
       - /dev/dri:/dev/dri
     network_mode: host
