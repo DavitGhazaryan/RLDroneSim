@@ -44,15 +44,15 @@ class ArdupilotEnv(gym.Env):
         self.observable_gains = self.environment_config['observable_gains'].split('+')
         self.observable_states = self.environment_config['observable_states'].split('+')
         self.action_gains = self.environment_config['action_gains'].split('+')
-        self.max_episode_steps = self.environment_config.get('max_episode_steps', 50)
+        self.max_episode_steps = self.environment_config.get('max_episode_steps')
         
         self.origin_pose = None       # {latitude_deg:, longitude_deg:, relative_altitude_m:}
         self.initial_pose = None       # {latitude_deg:, longitude_deg:, relative_altitude_m:}
         self.initial_attitude = None   # {pitch_deg:, roll_deg:, yaw_deg:}
-        self.initial_gains = None      # {gain_name: value}
+        self.initial_gains = {}      # {gain_name: value}
         
         self._async_mission_function = None
-        self.action_dt = self.environment_config.get('action_dt', 1.0)
+        self.action_dt = self.environment_config.get('action_dt')
         self.goal_orientation = None   # {pitch_deg:, roll_deg:, yaw_deg:}
         self.goal_pose = None          # {latitude_deg:, longitude_deg:, relative_altitude_m:}
         self.stable_time = 0
@@ -114,14 +114,159 @@ class ArdupilotEnv(gym.Env):
         total_dim = len(self.action_gains)
         
         # Create bounds arrays (all actions are -0.1 to 0.1)
-        lows = np.array([-0.1] * total_dim, dtype=np.float32)
-        highs = np.array([0.1] * total_dim, dtype=np.float32)
+        lows = np.array([-5.0] * total_dim, dtype=np.float32)
+        highs = np.array([5.0] * total_dim, dtype=np.float32)
         
         return spaces.Box(
             low=lows,
             high=highs,
             dtype=np.float32
         )
+
+    def reset(self, seed=None, options=None):
+        """Reset the environment to initial state."""
+        super().reset(seed=seed)             # sets self.np_random
+        if hasattr(self.action_space, "seed"):
+            self.action_space.seed(seed)
+        if hasattr(self.observation_space, "seed"):
+            self.observation_space.seed(seed)
+        self.episode_step = 0
+
+        if not self.initialized:
+            logger.info("🌎 Launching Gazebo simulation...")
+            self.gazebo.start_simulation()
+            self.gazebo._wait_for_startup()
+            self.gazebo.resume_simulation()
+            logger.debug("✅ Gazebo initialized")
+            logger.info("🚁 Starting ArduPilot SITL...")
+            self.sitl.start_sitl()
+            info = self.sitl.get_process_info()
+            logger.debug(f"✅ SITL running (PID {info['pid']})")
+            self.initialized = True
+            self.loop.run_until_complete(self._async_arm())
+            ## Resetting Ends Here: Drone is Armed
+
+            ## Setup Mission
+            pose_ned = self.loop.run_until_complete(self.sitl.get_pose_NED_async())
+            # other_pose = self.loop.run_until_complete(self.sitl.get_pose_NED_async())
+            # print(f"POSE ON THE GROund with GPS {pose.relative_altitude_m}, {pose.absolute_altitude_m}")
+            # print(f"POSE ON THE GROund with NED {-other_pose.position.down_m}")
+            for gain in self.action_gains:
+                self.initial_gains[gain] = self.loop.run_until_complete(self.sitl.get_param_async(gain))
+                
+            # self.origin_pose = {
+            #     'latitude_deg': pose.latitude_deg,
+            #     'longitude_deg': pose.longitude_deg,
+            #     'absolute_altitude_m': pose.absolute_altitude_m,
+            #     'relative_altitude_m': pose.relative_altitude_m
+            # }
+            self.initial_pose = {
+                'x_m': pose_ned.east_m,
+                'y_m': pose_ned.north_m,
+                'z_m': - pose_ned.down_m
+            }
+            attitude = self.loop.run_until_complete(self.sitl.get_attitude_async())
+            self.initial_attitude = {
+                'pitch_deg': attitude.pitch_deg,
+                'roll_deg': attitude.roll_deg,
+                'yaw_deg': attitude.yaw_deg
+            }
+
+            self._async_mission_function = self._setup_mission()
+            self.loop.run_until_complete(self._async_mission_function())
+        else:
+            self.initial_pose, self.initial_attitude, self.initial_gains = self.get_random_initial_state()
+            self.stable_time = 0
+            self.max_stable_time = 0
+            self.accumulated_huber_error = 0.0
+
+
+            for gain in self.action_gains:
+                self.loop.run_until_complete(self.sitl.set_param_async(gain, self.initial_gains[gain]))
+                print(f"Setting {gain} to {self.initial_gains[gain]}")
+            
+            ### will always place at 0 0 90 in gazebo convention
+            self.gazebo.pause_simulation()
+            self.gazebo.transport_position(self.sitl.name, [0, 0, max(self.initial_pose['z_m'], 0.2)], euler_to_quaternion(None))
+            self.gazebo.resume_simulation()
+            # self.gazebo.transport_position(self.sitl.name, [0, 0, self.initial_pose['relative_altitude_m']], euler_to_quaternion(self.initial_attitude))
+        
+        observation, info = self.loop.run_until_complete(self._async_get_observation())
+        print(observation)
+        return observation, info  # observation, info
+
+    async def _async_get_observation(self):
+        """
+        Get the observations of the environment as a flattened array.
+        This function is called when the environment is reset.
+        Returns flattened observations for Stable Baselines compatibility.
+        """
+        drone = await self.sitl._get_mavsdk_connection()
+        
+        # Initialize flattened observation array
+        total_dim = len(self.observable_gains) + len(self.observable_states)
+        observation = np.zeros(total_dim, dtype=np.float32)
+        
+        # Fill gains first
+        for i, observable_gain in enumerate(self.observable_gains):
+            gain_value = await drone.param.get_param_float(observable_gain)
+            observation[i] = gain_value
+        
+        # Fill states
+        pose_ned = (await anext(drone.telemetry.position_velocity_ned())).position
+        
+        for i, observable_state in enumerate(self.observable_states):
+            idx = len(self.observable_gains) + i
+            if observable_state == 'altitude_m':
+                state_value = -pose_ned.down_m  # Convert down_m (negative) to relative altitude (positive)
+            elif observable_state == 'x_m':
+                state_value = pose_ned.east_m
+            elif observable_state == 'y_m':
+                state_value = pose_ned.north_m
+            else:
+                raise NotImplemented("Observation not available")
+                # For other states, try to get from NED position
+            observation[idx] = state_value
+        
+        info = {}
+        return observation, info 
+    
+    def _setup_mission(self):
+        match self.config['environment_config']['mode']:
+            case 'altitude':
+                self.takeoff_altitude = self.config['environment_config']['takeoff_altitude']
+                self.goal_pose = {
+                    'x_m': self.initial_pose['x_m'],
+                    'y_m': self.initial_pose['y_m'],
+                    'z_m': self.takeoff_altitude - 0.321
+                }
+                self.goal_orientation = self.initial_attitude.copy()
+
+                return self._async_takeoff
+            
+            case 'position' | 'attitude' | 'stabilize' | 'althold':
+                raise NotImplementedError("Position, attitude, stabilize, and althold modes are not implemented yet")
+            case _:
+                raise ValueError(f"Invalid mode: {self.config['environment_config']['mode']}")
+
+    def get_random_initial_state(self):
+        # TODO: Implement random initial state
+        initial_gains = {}
+        for gain in self.action_gains:
+            # initial_gains[gain] = self.np_random.uniform(0.8, 5.2)
+            initial_gains[gain] = max(self.initial_gains[gain] + self.np_random.uniform(-2.0, 2.0), 0)
+        return {
+            'x_m': self.initial_pose['x_m'],
+            'y_m': self.initial_pose['y_m'],    
+            'z_m': self.initial_pose['z_m'] + self.np_random.uniform(-0.5, 0.5)
+        }, self.initial_attitude, initial_gains
+    
+    def step(self, action):
+        self.episode_step += 1
+        obs, reward, done, truncated, info = self.loop.run_until_complete(self._async_step(action))
+        # self.old_observation = obs
+        return obs, reward, done, truncated, info
+
 
     def get_observation_key_mapping(self):
         """Get mapping from observation keys to array indices."""
@@ -156,129 +301,6 @@ class ArdupilotEnv(gym.Env):
             description[f"action_{i}"] = f"Gain adjustment: {key}"
         return description
 
-    def reset(self, seed=None, options=None):
-        """Reset the environment to initial state."""
-        super().reset(seed=seed)             # sets self.np_random
-        if hasattr(self.action_space, "seed"):
-            self.action_space.seed(seed)
-        if hasattr(self.observation_space, "seed"):
-            self.observation_space.seed(seed)
-        self.episode_step = 0
-
-        if not self.initialized:
-            logger.info("🌎 Launching Gazebo simulation...")
-            self.gazebo.start_simulation()
-            self.gazebo._wait_for_startup()
-            self.gazebo.resume_simulation()
-            logger.info("✅ Gazebo initialized")
-            logger.info("🚁 Starting ArduPilot SITL...")
-            self.sitl.start_sitl()
-            info = self.sitl.get_process_info()
-            logger.info(f"✅ SITL running (PID {info['pid']})")
-            self.initialized = True
-            self.loop.run_until_complete(self._async_arm())
-            ## Resetting Ends Here: Drone is Armed
-
-            ## Setup Mission
-            pose = self.loop.run_until_complete(self.sitl.get_pose_async())
-            self.origin_pose = {
-                'latitude_deg': pose.latitude_deg,
-                'longitude_deg': pose.longitude_deg,
-                'absolute_altitude_m': pose.absolute_altitude_m,
-                'relative_altitude_m': pose.relative_altitude_m
-            }
-            self.initial_pose = {
-                'latitude_deg': pose.latitude_deg,
-                'longitude_deg': pose.longitude_deg,
-                'relative_altitude_m': pose.relative_altitude_m
-            }
-            attitude = self.loop.run_until_complete(self.sitl.get_attitude_async())
-            self.initial_attitude = {
-                'pitch_deg': attitude.pitch_deg,
-                'roll_deg': attitude.roll_deg,
-                'yaw_deg': attitude.yaw_deg
-            }
-
-            self._async_mission_function = self._setup_mission()
-            self.loop.run_until_complete(self._async_mission_function())
-        else:
-            self.initial_pose, self.initial_attitude, self.initial_gains = self.get_random_initial_state()
-            self.stable_time = 0
-            self.max_stable_time = 0
-            self.accumulated_huber_error = 0.0
-
-            #TODO  Position needs to be moved to odometry
-            # self.gazebo.transport_position(self.sitl.name, self.initial_pose, self.initial_attitude)
-            # new_xy = lat_lon_to_xy_meters(self.origin_pose, self.initial_pose['latitude_deg'], self.initial_pose['longitude_deg'])
-            for gain in self.action_gains:
-                self.loop.run_until_complete(self.sitl.set_param_async(gain, self.initial_gains[gain]))
-                print(f"Setting {gain} to {self.initial_gains[gain]}")
-            self.gazebo.transport_position(self.sitl.name, [0, 0, self.initial_pose['relative_altitude_m']], euler_to_quaternion(self.initial_attitude))
-        
-        observation, info = self.loop.run_until_complete(self._async_get_observation())
-        return observation, info  # observation, info
-
-    async def _async_get_observation(self):
-        """
-        Get the observations of the environment as a flattened array.
-        This function is called when the environment is reset.
-        Returns flattened observations for Stable Baselines compatibility.
-        """
-        drone = await self.sitl._get_mavsdk_connection()
-        
-        # Initialize flattened observation array
-        total_dim = len(self.observable_gains) + len(self.observable_states)
-        observation = np.zeros(total_dim, dtype=np.float32)
-        
-        # Fill gains first
-        for i, observable_gain in enumerate(self.observable_gains):
-            gain_value = await drone.param.get_param_float(observable_gain)
-            observation[i] = gain_value
-        
-        # Fill states
-        position = await anext(drone.telemetry.position())
-        for i, observable_state in enumerate(self.observable_states):
-            idx = len(self.observable_gains) + i
-            state_value = getattr(position, observable_state)
-            observation[idx] = state_value
-        
-        info = {}
-        return observation, info 
-    
-    def _setup_mission(self):
-        match self.config['environment_config']['mode']:
-            case 'altitude':
-                self.takeoff_altitude = self.config['environment_config']['takeoff_altitude']
-                self.goal_pose = {
-                    'latitude_deg': self.initial_pose['latitude_deg'],
-                    'longitude_deg': self.initial_pose['longitude_deg'],
-                    'relative_altitude_m': self.takeoff_altitude
-                }
-                self.goal_orientation = self.initial_attitude.copy()
-                return self._async_takeoff
-            
-            case 'position' | 'attitude' | 'stabilize' | 'althold':
-                raise NotImplementedError("Position, attitude, stabilize, and althold modes are not implemented yet")
-            case _:
-                raise ValueError(f"Invalid mode: {self.config['environment_config']['mode']}")
-
-    def get_random_initial_state(self):
-        # TODO: Implement random initial state
-        initial_gains = {}
-        for gain in self.action_gains:
-            initial_gains[gain] = self.np_random.uniform(0.8, 5.2)
-        return {
-            'latitude_deg': self.initial_pose['latitude_deg'],
-            'longitude_deg': self.initial_pose['longitude_deg'],    
-            'relative_altitude_m': 1.2 + self.np_random.uniform(-0.5, 0.5)
-            # 'relative_altitude_m': self.initial_pose['relative_altitude_m'] + np.random.uniform(-0.5, 0.5)
-        }, self.initial_attitude, initial_gains
-    
-    def step(self, action):
-        self.episode_step += 1
-        obs, reward, done, truncated, info = self.loop.run_until_complete(self._async_step(action))
-        # self.old_observation = obs
-        return obs, reward, done, truncated, info
 
     async def _async_step(self, action):
         """
@@ -286,7 +308,7 @@ class ArdupilotEnv(gym.Env):
         Actions are changes to PID parameters that need to be applied.
         """
         drone = await self.sitl._get_mavsdk_connection()
-        
+        logger.info(f"Step")
         # Validate action dimensions
         if len(action) != len(self.action_gains):
             raise ValueError(f"Expected action of length {len(self.action_gains)}, got {len(action)}")
@@ -299,22 +321,24 @@ class ArdupilotEnv(gym.Env):
         # Apply the flattened action to the gains
         for i, var in enumerate(self.action_gains):
             new_gains[var] += action[i]
-            await drone.param.set_param_float(var, new_gains[var])
+            await drone.param.set_param_float(var, max(new_gains[var], 0))
 
         await self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
 
         # get the new observation
         observation, info = await self._async_get_observation()
-        pose = await anext(drone.telemetry.position())
+        pose_vel = await anext(drone.telemetry.position_velocity_ned())
+        pose_ned = pose_vel.position
         attitude = await anext(drone.telemetry.attitude_euler())
         
 
         def _check_terminated(pose, attitude):
-            # Assume pose : [latitude_deg:, longitude_deg:, absolute_altitude_m:, relative_altitude_m:]
+            # Assume pose : [north_m:, east_m:, down_m:] object
             #             attitude: [pitch_deg:, roll_deg:, yaw_deg:]
             
             # 1. Crash: the difference between current and target attitude is more that 30 degree
-            if abs(attitude.pitch_deg - self.goal_orientation['pitch_deg']) > 30 or abs(attitude.roll_deg - self.goal_orientation['roll_deg']) > 30:
+            print(attitude)
+            if abs(attitude.pitch_deg - self.goal_orientation['pitch_deg']) > 20 or abs(attitude.roll_deg - self.goal_orientation['roll_deg']) > 20:
                 return True, "crash: excessive pitch/roll"
 
             # 2. Flip (pitch or roll > 90 deg)
@@ -322,15 +346,17 @@ class ArdupilotEnv(gym.Env):
                 return True, "crash: flip"
 
             # 3. 2x farther from goal than originally
-            dist_init = np.linalg.norm(np.array([self.initial_pose["latitude_deg"], self.initial_pose["longitude_deg"]]) - np.array([self.goal_pose["latitude_deg"], self.goal_pose["longitude_deg"]]))
-            dist_now = np.linalg.norm(np.array([pose.latitude_deg, pose.longitude_deg]) - np.array([self.goal_pose["latitude_deg"], self.goal_pose["longitude_deg"]]))
+            dist_init = np.linalg.norm(np.array([self.initial_pose["x_m"], self.initial_pose["y_m"], self.initial_pose["z_m"]]) 
+                                       - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
+            dist_now = np.linalg.norm(np.array([pose.north_m, pose.east_m, -pose.down_m]) 
+                                      - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
             
-            if dist_now > 1.5 * dist_init:
+            if dist_now > 1.5 * dist_init and dist_now > 0.01:
                 return True, "too far from goal"
             
             # 4. goal is reached - check both position and altitude
-            pos_error = np.linalg.norm(np.array([pose.latitude_deg, pose.longitude_deg]) - np.array([self.goal_pose["latitude_deg"], self.goal_pose["longitude_deg"]]))
-            alt_error = abs(pose.relative_altitude_m - self.goal_pose["relative_altitude_m"])
+            pos_error = np.linalg.norm(np.array([pose.north_m, pose.east_m]) - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"]]))
+            alt_error = abs(- pose.down_m - self.goal_pose["z_m"])
             
             # Check if in vicinity using helper method
             in_vicinity = self._check_vicinity_status(pos_error, alt_error)
@@ -346,13 +372,14 @@ class ArdupilotEnv(gym.Env):
                 self.stable_time = 0
             return False, None
 
-        terminated, reason = _check_terminated(pose, attitude)
+        terminated, reason = _check_terminated(pose_ned, attitude)
+
         if terminated:
             truncated = False
         else:
             terminated = False
             truncated = self.episode_step >= self.max_episode_steps
-        reward = self._compute_reward(pose, attitude)
+        reward = self._compute_reward(pose_ned, attitude)
         
         # Create proper info dictionary
         info = {
@@ -382,7 +409,7 @@ class ArdupilotEnv(gym.Env):
         drone = await self.sitl._get_mavsdk_connection()
         await drone.action.set_takeoff_altitude(self.takeoff_altitude)
         await drone.action.takeoff()
-        await asyncio.sleep(5/self.sitl.speedup)
+        await asyncio.sleep(15/self.sitl.speedup)
 
     async def _gazebo_sleep(self, duration):
         """
@@ -421,10 +448,10 @@ class ArdupilotEnv(gym.Env):
         """
         
         # Calculate position error (2D distance)
-        pos_error = np.linalg.norm(np.array([pose.latitude_deg, pose.longitude_deg]) - np.array([self.goal_pose["latitude_deg"], self.goal_pose["longitude_deg"]]))
+        pos_error = np.linalg.norm(np.array([pose.north_m, pose.east_m]) - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"]]))
         
         # Calculate altitude error
-        alt_error = abs(pose.relative_altitude_m - self.goal_pose["relative_altitude_m"])
+        alt_error = abs(-pose.down_m - self.goal_pose["z_m"])
         
         # Use the larger error for the main reward calculation  ????
         e_t = max(pos_error, alt_error)
@@ -478,7 +505,7 @@ class ArdupilotEnv(gym.Env):
             nu = 0.1      # Huber error coefficient
             r += kappa * self.max_stable_time - nu * self.accumulated_huber_error
         return r
-
+    
     def __compatibility_checks(self):
         if self.config['environment_config']['mode'] not in ['position', 'attitude', 'stabilize', 'althold', 'altitude']:
             raise ValueError(f"Invalid mode: {self.config['environment_config']['mode']}")

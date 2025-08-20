@@ -3,11 +3,11 @@ environment_config:
   max_episode_steps: 10
   mode: "altitude"  # position, attitude, stabilize, althold, altitude
   observable_gains: "PSC_POSZ_P+PSC_VELZ_P"
-  observable_states: "relative_altitude_m"
+  observable_states: "altitude_m"
   action_gains: "PSC_POSZ_P+PSC_VELZ_P" 
   reward_function: "error"   # error, waypoint, pid_tuning, custom (corresponds to the sections in reward_config: based on this RewardClass is defined)
-  action_dt: 1               # interval between action and its observation
-  takeoff_altitude: 2.5
+  action_dt: 0.03             # interval between action and its observation
+  takeoff_altitude: 10.0
 
 # ArduPilot SITL configuration
 ardupilot_config:
@@ -15,6 +15,7 @@ ardupilot_config:
   vehicle: "ArduCopter"                                          # Vehicle type (copter, plane, rover)
   frame: "gazebo-iris"                                           # Vehicle model for Gazebo integration
   name: "iris_with_ardupilot"
+  ideal_sensors: true
   
   # optional
   instance:  0                                                   # Instance number

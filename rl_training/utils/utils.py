@@ -45,7 +45,9 @@ def euler_to_quaternion(euler):
     Convert Euler angles (yaw, pitch, roll) to a quaternion.
     Angles are expected in radians.
     """
-    roll, pitch, yaw = euler['roll_deg'], euler['pitch_deg'], euler['yaw_deg']
+    # roll, pitch, yaw = euler['roll_deg'], euler['pitch_deg'], euler['yaw_deg']
+    roll, pitch, yaw = 0.0, 0.0, 90.0
+    roll, pitch, yaw = np.deg2rad([roll, pitch, yaw])
     qx = np.sin(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) - np.cos(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
     qy = np.cos(roll/2) * np.sin(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.cos(pitch/2) * np.sin(yaw/2)
     qz = np.cos(roll/2) * np.cos(pitch/2) * np.sin(yaw/2) - np.sin(roll/2) * np.sin(pitch/2) * np.cos(yaw/2)

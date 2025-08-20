@@ -4,7 +4,6 @@ from rl_training.environments import ArdupilotEnv
 from rl_training.utils.utils import load_config
 from gymnasium.wrappers import RecordEpisodeStatistics
 import numpy as np
-import wandb
 
 
 def main():
@@ -12,14 +11,12 @@ def main():
     config = load_config('/home/pid_rl/rl_training/configs/default_config.yaml')
     
     env = ArdupilotEnv(config)
-    print(env.observation_space.sample())
-    print(env.reset())
-    # agent = PPOAgent(config)
-    # agent.setup(env)
+
+
     total_episodes = 20
-    max_steps_per_episode = 30
+    max_steps_per_episode = 10
     env = RecordEpisodeStatistics(env, buffer_length=total_episodes)
-    
+    env.reset()
     for episode in range(total_episodes):
         obs, info = env.reset()
         print(f"Observation: {obs}")
@@ -54,14 +51,14 @@ def main():
     # print(f'Episode rewards: {list(env.return_queue)}')
     # print(f'Episode lengths: {list(env.length_queue)}')
 
-        # Calculate some useful metrics
-    avg_reward = np.sum(env.return_queue)
-    avg_length = np.sum(env.length_queue)
-    std_reward = np.std(env.return_queue)
+    #     # Calculate some useful metrics
+    # avg_reward = np.sum(env.return_queue)
+    # avg_length = np.sum(env.length_queue)
+    # std_reward = np.std(env.return_queue)
 
-    print(f'\nAverage reward: {avg_reward:.2f} ± {std_reward:.2f}')
-    print(f'Average episode length: {avg_length:.1f} steps')
-    print(f'Success rate: {sum(1 for r in env.return_queue if r > 0) / len(env.return_queue):.1%}')
+    # print(f'\nAverage reward: {avg_reward:.2f} ± {std_reward:.2f}')
+    # print(f'Average episode length: {avg_length:.1f} steps')
+    # print(f'Success rate: {sum(1 for r in env.return_queue if r > 0) / len(env.return_queue):.1%}')
     #     # Save checkpoint every 100 episodes
     #     # if episode % 100 == 0:
     #         # agent.save(f"./checkpoint_episode_{episode}")

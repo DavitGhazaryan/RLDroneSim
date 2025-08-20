@@ -65,7 +65,7 @@ class GazeboInterface:
             
             self._wait_for_startup()
             self.is_started = True
-            logger.info("Gazebo simulation started successfully!")
+            logger.debug("Gazebo simulation started successfully!")
 
             self._timer_thread = threading.Thread(target=self._timer_thread, daemon=True)
             self._timer_thread.start()
@@ -154,7 +154,7 @@ class GazeboInterface:
     def close(self):
         if self.process is None:
             return
-        logger.info("Stopping Gazebo simulation...")
+        logger.debug("Stopping Gazebo simulation...")
         
         try:
             if self.process.poll() is None:
@@ -173,7 +173,7 @@ class GazeboInterface:
         self.process = None
         self.is_started = False
         self._timer_thread.join(timeout=1)
-        logger.info("Gazebo simulation stopped.")
+        logger.debug("Gazebo simulation stopped.")
     
     # Private methods
     def _parse_world_name(self, sdf_path: str) -> str:

@@ -50,7 +50,7 @@ class ArduPilotSITL:
         self.ardupilot_path = Path(config['ardupilot_path'])
         self.vehicle         = config.get('vehicle', 'ArduCopter')
         self.frame           = config.get('frame',   'quad')
-
+        self.ideal_sensors   = config.get('ideal_sensors')
         # optional
         self.name             = config.get('name')
         self.instance         = config.get('instance')
@@ -97,8 +97,8 @@ class ArduPilotSITL:
         if self.is_running():
             raise RuntimeError("SITL already running")
         cmd = self._build_command()
-        logger.info(f"Launching SITL")
-        logger.info(f"{cmd}")
+        logger.debug(f"Launching SITL")
+        logger.debug(f"{cmd}")
 
         self.process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -109,15 +109,15 @@ class ArduPilotSITL:
         self._wait_for_startup()      # ensures that the process is running and the port(s) are available
         self._track_child_processes()
 
-        logger.info("Establishing connections...")
+        logger.debug("Establishing connections...")
         self._get_mavlink_connection()
-        logger.info("MAVLink connection established")
+        logger.debug("MAVLink connection established")
 
         try:
             self._set_mode_sync('GUIDED')
         except Exception as e:
             logger.warning(f"Error setting GUIDED mode after startup: {e}")
-        logger.info("SITL started successfully.")
+        logger.debug("SITL started successfully.")
 
     # Mode Setting
     def _set_mode_sync(self, mode_name: str, timeout: float = 10.0) -> bool:
@@ -140,7 +140,7 @@ class ArduPilotSITL:
                 return False
 
             mode_id = mapping[mode_name]
-            logger.info(f"Setting mode {mode_name} (ID: {mode_id})")
+            logger.debug(f"Setting mode {mode_name} (ID: {mode_id})")
             
             # Send the mode change
             master.mav.set_mode_send(
@@ -158,8 +158,8 @@ class ArduPilotSITL:
                 # Non-blocking read
                 msg = master.recv_match(type='HEARTBEAT', blocking=False, timeout=0.1)
                 if msg and msg.custom_mode == mode_id:
-                    logger.info(f"Mode change to {mode_name} confirmed")
-                    logger.info("   ")
+                    logger.debug(f"Mode change to {mode_name} confirmed")
+                    logger.debug("   ")
                     return True
                     
                 time.sleep(0.1)
@@ -175,12 +175,24 @@ class ArduPilotSITL:
         drone = await self._get_mavsdk_connection()
         await drone.param.set_param_float(param_name, value)
 
+    async def get_param_async(self, param_name: str):
+        drone = await self._get_mavsdk_connection()
+        return await drone.param.get_param_float(param_name)
+
+    
+
     # Pose Getting
-    async def get_pose_async(self):
+    async def get_pose_gps_async(self):
         drone = await self._get_mavsdk_connection()
         position = await anext(drone.telemetry.position())
         return position
     
+    async def get_pose_NED_async(self):
+        drone = await self._get_mavsdk_connection()
+        pose_vel = await anext(drone.telemetry.position_velocity_ned())
+        return pose_vel.position
+    
+
     async def get_attitude_async(self):
         drone = await self._get_mavsdk_connection()
         attitude = await anext(drone.telemetry.attitude_euler())
@@ -244,7 +256,7 @@ class ArduPilotSITL:
     def stop_sitl(self):
         if not self.is_running():
             return
-        logger.info("Stopping SITL...")
+        logger.debug("Stopping SITL...")
         
         # Close MAVLink connection first
         self._close_mavlink_connection()
@@ -284,7 +296,7 @@ class ArduPilotSITL:
         
         self.process = None
         self.child_processes.clear()
-        logger.info("SITL stopped.")
+        logger.debug("SITL stopped.")
 
     # utils for the SITL
     def _validate_paths(self):
@@ -351,6 +363,10 @@ class ArduPilotSITL:
         if self.map                     : cmd.append('--map')
         if self.console                 : cmd.append('--console')
 
+        if self.ideal_sensors:
+            cmd.append(f'--add-param-file=/home/pid_rl/rl_training/configs/ideal_sensors.param')
+
+
         if self.master_port is not None and self.mavsdk_port is not None:
             # cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port} --out udp:127.0.0.1:{self.mavsdk_port}')
             cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port}')
@@ -388,8 +404,8 @@ class ArduPilotSITL:
         """
         Wait for SITL to initialize by checking both process health and port availability.
         """
-        logger.info("Waiting for SITL to initialize...")
-        logger.info("   ")
+        logger.debug("Waiting for SITL to initialize...")
+        logger.debug("   ")
         
         start = time.time()
 
@@ -458,7 +474,7 @@ class ArduPilotSITL:
             sock.bind((host, port))
             return True   # bind succeeded → port *not* in use by SITL
         except OSError:
-            logger.info(f"Port {host}:{port} is already in use !!!")
+            logger.error(f"Port {host}:{port} is already in use !!!")
             return False  # bind failed → port *in* use by SITL
         finally:
             sock.close()
@@ -491,7 +507,7 @@ class ArduPilotSITL:
             try:
                 self._mavlink_master = mavutil.mavlink_connection(addr)
                 self._mavlink_master.wait_heartbeat(timeout=10.0)
-                logger.info(f"Established MAVLink connection to {addr}")
+                logger.debug(f"Established MAVLink connection to {addr}")
             except Exception as e:
                 self._mavlink_master = None
                 raise RuntimeError(f"Failed to establish MAVLink connection to {addr}: {e}")
@@ -523,18 +539,18 @@ class ArduPilotSITL:
             return self._mavsdk_system
 
         # Create new connection instance
-        logger.info("Creating new MAVSDK System instance")
+        logger.debug("Creating new MAVSDK System instance")
         self._mavsdk_system = System()
         
         # Build connection address
         port = self.mavsdk_port
         address = f"udpin://127.0.0.1:{port}"
-        logger.info(f"Connecting MAVSDK to {address}")
+        logger.debug(f"Connecting MAVSDK to {address}")
 
         try:
             # Establish connection
             await self._mavsdk_system.connect(system_address=address)
-            logger.info(f"Connection initiated to {address}")
+            logger.debug(f"Connection initiated to {address}")
 
             # Wait for connection to be established
             connected = False
@@ -550,7 +566,7 @@ class ArduPilotSITL:
                     
                     if state.is_connected:
                         connected = True
-                        logger.info(f"Successfully connected MAVSDK to {address}")
+                        logger.debug(f"Successfully connected MAVSDK to {address}")
                         break
                         
                 except (asyncio.TimeoutError, StopAsyncIteration):
@@ -593,7 +609,7 @@ class ArduPilotSITL:
 
     def _cleanup_on_exit(self):
         if self.is_running():
-            logger.info("Cleanup on exit: stopping SITL")
+            logger.debug("Cleanup on exit: stopping SITL")
             self.stop_sitl()
         
         # Shutdown thread executor

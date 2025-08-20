@@ -1,0 +1,51 @@
+# -------- GOD MODE: zero noise/disturbances --------
+SIM_ACC_RND,0
+SIM_GYR_RND,0
+SIM_BARO_RND,0
+SIM_BARO_DRIFT,0
+SIM_MAG_RND,0
+SIM_MAG_ERROR,0
+SIM_GPS_NOISE,0
+SIM_GPS_ACC,0
+SIM_GPS_LAG_MS,0
+SIM_GPS_ALT_OFS,0
+SIM_GPS_DRFTALT,0
+SIM_GPS_VERR,0
+SIM_GPS_BYTELOS,0
+SIM_FLOW_RND,0
+SIM_SONAR_RND,0
+SIM_WIND_SPD,0
+SIM_WIND_TURB,0
+SIM_GPS_GLITCH,0
+
+# -------- EKF: stable, permissive (SITL ONLY) -------
+# ARMING_CHECK,0          # don’t block arming on sensor checks (SITL)
+# FS_EKF_THRESH,0         # disable EKF failsafe trigger
+# EK3_SRC1_POSZ,1         # Z from baro (default). See AGL block below if desired.
+
+
+EK3_SRC1_POSZ,3
+RNGFND1_TYPE,1
+RNGFND1_MAX_CM,400
+RNGFND1_MIN_CM,5
+RNGFND1_ORIENT,25
+RNGFND1_SCALING,1
+
+
+# -------- Prevent auto-disarm / auto-land / FS ------
+FS_CRASH_CHECK,0
+DISARM_DELAY,0          # 0 = never auto-disarm after landing
+FS_THR_ENABLE,0         # disable RC-loss FS
+FS_GCS_ENABLE,0         # disable GCS-loss FS
+BATT_FS_LOW_ACT,0
+BATT_FS_CRT_ACT,0
+FENCE_ENABLE,0
+ARMING_RUDDER,0
+
+# -------- Motors / control niceties -----------------
+MOT_PWM_TYPE,0          # default; keep simple
+BRD_SAFETYENABLE,0      # no virtual safety switch in SITL
+
+
+# -------- Enable Lua Scripting -----------------
+SCR_ENABLE, 1
