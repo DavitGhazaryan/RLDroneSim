@@ -120,6 +120,8 @@ ENV LD_LIBRARY_PATH=/usr/lib/wsl/lib:${LD_LIBRARY_PATH}
 RUN pip3 install --upgrade pip && \
     pip3 install numpy matplotlib==3.10.0 scipy pandas mavsdk gymnasium mavproxy==1.8.71 protobuf==5.29.0 
 
+RUN python -m pip install --upgrade --ignore-installed sympy
+
 RUN pip install stable-baselines3[extra] && \
     pip uninstall -y opencv-python && pip install -U opencv-python-headless
 
