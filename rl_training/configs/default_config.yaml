@@ -6,8 +6,8 @@ environment_config:
   observable_states: "altitude_m"
   action_gains: "PSC_POSZ_P+PSC_VELZ_P" 
   reward_function: "error"   # error, waypoint, pid_tuning, custom (corresponds to the sections in reward_config: based on this RewardClass is defined)
-  action_dt: 0.03             # interval between action and its observation
-  takeoff_altitude: 10.0
+  action_dt: 0.3             # interval between action and its observation
+  takeoff_altitude: 5.0
 
 # ArduPilot SITL configuration
 ardupilot_config:

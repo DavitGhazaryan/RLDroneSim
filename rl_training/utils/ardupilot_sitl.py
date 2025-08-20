@@ -171,6 +171,18 @@ class ArduPilotSITL:
             logger.error(f"Failed to set mode {mode_name}: {e}")
             return False
 
+    async def transport_and_reset_async(self, position, quaternion):
+        drone = await self._get_mavsdk_connection()
+        await drone.param.set_param_float("SCR_USER1", 0)
+        # set position
+        await drone.param.set_param_float("SCR_USER2", position[0])
+        await drone.param.set_param_float("SCR_USER3", position[1])
+        await drone.param.set_param_float("SCR_USER4", position[2])
+        await drone.param.set_param_float("SCR_USER1", 1)
+
+
+        
+
     async def set_param_async(self, param_name: str, value: float):
         drone = await self._get_mavsdk_connection()
         await drone.param.set_param_float(param_name, value)

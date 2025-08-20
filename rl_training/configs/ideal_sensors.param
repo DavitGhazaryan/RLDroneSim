@@ -19,10 +19,14 @@ SIM_WIND_TURB,0
 SIM_GPS_GLITCH,0
 
 # -------- EKF: stable, permissive (SITL ONLY) -------
-# ARMING_CHECK,0          # don’t block arming on sensor checks (SITL)
+# ARMING_CHECK,0           # don’t block arming on sensor checks (SITL)
 # FS_EKF_THRESH,0         # disable EKF failsafe trigger
 # EK3_SRC1_POSZ,1         # Z from baro (default). See AGL block below if desired.
 
+GPS_TYPE, 0
+GPS_AUTO_CONFIG, 0
+GPS_AUTO_SWITCH, 0
+AHRS_EKF_TYPE, 10
 
 EK3_SRC1_POSZ,3
 RNGFND1_TYPE,1
@@ -37,6 +41,7 @@ FS_CRASH_CHECK,0
 DISARM_DELAY,0          # 0 = never auto-disarm after landing
 FS_THR_ENABLE,0         # disable RC-loss FS
 FS_GCS_ENABLE,0         # disable GCS-loss FS
+
 BATT_FS_LOW_ACT,0
 BATT_FS_CRT_ACT,0
 FENCE_ENABLE,0

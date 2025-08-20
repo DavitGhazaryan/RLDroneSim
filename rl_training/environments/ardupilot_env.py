@@ -148,18 +148,11 @@ class ArdupilotEnv(gym.Env):
 
             ## Setup Mission
             pose_ned = self.loop.run_until_complete(self.sitl.get_pose_NED_async())
-            # other_pose = self.loop.run_until_complete(self.sitl.get_pose_NED_async())
-            # print(f"POSE ON THE GROund with GPS {pose.relative_altitude_m}, {pose.absolute_altitude_m}")
-            # print(f"POSE ON THE GROund with NED {-other_pose.position.down_m}")
+
             for gain in self.action_gains:
                 self.initial_gains[gain] = self.loop.run_until_complete(self.sitl.get_param_async(gain))
                 
-            # self.origin_pose = {
-            #     'latitude_deg': pose.latitude_deg,
-            #     'longitude_deg': pose.longitude_deg,
-            #     'absolute_altitude_m': pose.absolute_altitude_m,
-            #     'relative_altitude_m': pose.relative_altitude_m
-            # }
+
             self.initial_pose = {
                 'x_m': pose_ned.east_m,
                 'y_m': pose_ned.north_m,
@@ -175,6 +168,7 @@ class ArdupilotEnv(gym.Env):
             self._async_mission_function = self._setup_mission()
             self.loop.run_until_complete(self._async_mission_function())
         else:
+            logger.info("Resetting the Environment")
             self.initial_pose, self.initial_attitude, self.initial_gains = self.get_random_initial_state()
             self.stable_time = 0
             self.max_stable_time = 0
@@ -183,17 +177,19 @@ class ArdupilotEnv(gym.Env):
 
             for gain in self.action_gains:
                 self.loop.run_until_complete(self.sitl.set_param_async(gain, self.initial_gains[gain]))
-                print(f"Setting {gain} to {self.initial_gains[gain]}")
             
             ### will always place at 0 0 90 in gazebo convention
-            self.gazebo.pause_simulation()
+            # self.gazebo.pause_simulation()
             self.gazebo.transport_position(self.sitl.name, [0, 0, max(self.initial_pose['z_m'], 0.2)], euler_to_quaternion(None))
-            self.gazebo.resume_simulation()
+            self.loop.run_until_complete(self.sitl.transport_and_reset_async([0, 0, max(self.initial_pose['z_m'], 0.2)], euler_to_quaternion(None)))
+            # self.gazebo.resume_simulation()
             # self.gazebo.transport_position(self.sitl.name, [0, 0, self.initial_pose['relative_altitude_m']], euler_to_quaternion(self.initial_attitude))
         
         observation, info = self.loop.run_until_complete(self._async_get_observation())
-        print(observation)
+        logger.info(observation)
         return observation, info  # observation, info
+
+
 
     async def _async_get_observation(self):
         """
@@ -308,7 +304,6 @@ class ArdupilotEnv(gym.Env):
         Actions are changes to PID parameters that need to be applied.
         """
         drone = await self.sitl._get_mavsdk_connection()
-        logger.info(f"Step")
         # Validate action dimensions
         if len(action) != len(self.action_gains):
             raise ValueError(f"Expected action of length {len(self.action_gains)}, got {len(action)}")
@@ -332,14 +327,20 @@ class ArdupilotEnv(gym.Env):
         attitude = await anext(drone.telemetry.attitude_euler())
         
 
-        def _check_terminated(pose, attitude):
+        def _check_terminated(pose_vel, attitude):
+            pose = pose_vel.position
+            vel = pose_vel.velocity
             # Assume pose : [north_m:, east_m:, down_m:] object
             #             attitude: [pitch_deg:, roll_deg:, yaw_deg:]
             
             # 1. Crash: the difference between current and target attitude is more that 30 degree
-            print(attitude)
-            if abs(attitude.pitch_deg - self.goal_orientation['pitch_deg']) > 20 or abs(attitude.roll_deg - self.goal_orientation['roll_deg']) > 20:
+            if abs(attitude.pitch_deg - self.goal_orientation['pitch_deg']) > 15 or abs(attitude.roll_deg - self.goal_orientation['roll_deg']) > 15:
                 return True, "crash: excessive pitch/roll"
+
+            # Velocity checks
+            if abs(vel.north_m_s) > 2 or abs(vel.east_m_s) > 2 or abs(vel.down_m_s) > 2:
+                return True, "vel exceeds limits"
+            
 
             # 2. Flip (pitch or roll > 90 deg)
             if abs(attitude.pitch_deg) > 90 or abs(attitude.roll_deg) > 90:
@@ -351,7 +352,7 @@ class ArdupilotEnv(gym.Env):
             dist_now = np.linalg.norm(np.array([pose.north_m, pose.east_m, -pose.down_m]) 
                                       - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
             
-            if dist_now > 1.5 * dist_init and dist_now > 0.01:
+            if dist_now > 1.2 * dist_init and dist_now > 0.01:
                 return True, "too far from goal"
             
             # 4. goal is reached - check both position and altitude
@@ -372,13 +373,16 @@ class ArdupilotEnv(gym.Env):
                 self.stable_time = 0
             return False, None
 
-        terminated, reason = _check_terminated(pose_ned, attitude)
+        terminated, reason = _check_terminated(pose_vel, attitude)
 
         if terminated:
             truncated = False
+            logger.info(f"Terminating the episode {reason}")
         else:
             terminated = False
             truncated = self.episode_step >= self.max_episode_steps
+            if truncated:
+                logger.info(f"Truncating the Episode")
         reward = self._compute_reward(pose_ned, attitude)
         
         # Create proper info dictionary
