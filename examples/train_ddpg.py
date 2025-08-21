@@ -15,16 +15,8 @@ import numpy as np
 
 
 def create_environment(config_path: str):
-    """
-    Create the modified ArdupilotEnv that's directly compatible with Stable Baselines.
-    
-    Args:
-        config_path: Path to the configuration file
-        
-    Returns:
-        ArdupilotEnv instance ready for Stable Baselines
-    """
-    print("🔧 Creating Modified ArdupilotEnv...")
+
+    print("🔧 Creating  ArdupilotEnv...")
     config = load_config(config_path)
     
     # Create the environment (now directly compatible)
@@ -91,7 +83,7 @@ def train_ddpg_agent(env, config, total_timesteps=1000):
     
     # Create checkpoint callback
     checkpoint_callback = CheckpointCallback(
-        save_freq=1000,
+        save_freq=500,
         save_path="./models/",
         name_prefix="ddpg_ardupilot"
     )
@@ -106,7 +98,6 @@ def train_ddpg_agent(env, config, total_timesteps=1000):
     
     print("✅ Training completed!")
     return model
-
 
 def evaluate_agent(model, env, num_episodes=5):
     """

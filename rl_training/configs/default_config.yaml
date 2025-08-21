@@ -1,6 +1,6 @@
 # Environment configuration
 environment_config:
-  max_episode_steps: 10
+  max_episode_steps: 50
   mode: "altitude"  # position, attitude, stabilize, althold, altitude
   observable_gains: "PSC_POSZ_P+PSC_VELZ_P"
   observable_states: "altitude_m"

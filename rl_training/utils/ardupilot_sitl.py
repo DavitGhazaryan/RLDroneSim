@@ -98,7 +98,7 @@ class ArduPilotSITL:
             raise RuntimeError("SITL already running")
         cmd = self._build_command()
         logger.debug(f"Launching SITL")
-        logger.debug(f"{cmd}")
+        logger.info(f"{cmd}")
 
         self.process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -173,11 +173,13 @@ class ArduPilotSITL:
 
     async def transport_and_reset_async(self, position, quaternion):
         drone = await self._get_mavsdk_connection()
+        # reset trigger
         await drone.param.set_param_float("SCR_USER1", 0)
         # set position
-        await drone.param.set_param_float("SCR_USER2", position[0])
-        await drone.param.set_param_float("SCR_USER3", position[1])
-        await drone.param.set_param_float("SCR_USER4", position[2])
+        await drone.param.set_param_float("SCR_USER2", position[0])   # x : east
+        await drone.param.set_param_float("SCR_USER3", position[1])   # y : north
+        await drone.param.set_param_float("SCR_USER4", position[2])   # z :     
+        # trigger
         await drone.param.set_param_float("SCR_USER1", 1)
 
 
