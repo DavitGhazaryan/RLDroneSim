@@ -98,7 +98,7 @@ class ArduPilotSITL:
             raise RuntimeError("SITL already running")
         cmd = self._build_command()
         logger.debug(f"Launching SITL")
-        logger.info(f"{cmd}")
+        logger.debug(f"{cmd}")
 
         self.process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,

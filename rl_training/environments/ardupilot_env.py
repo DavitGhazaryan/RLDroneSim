@@ -173,24 +173,22 @@ class ArdupilotEnv(gym.Env):
             self.max_stable_time = 0
             self.accumulated_huber_error = 0.0
 
-            print(f"Setting to {self.initial_pose}")
+            logger.info(f"Setting gains to {self.initial_gains}")
 
             for gain in self.action_gains:
                 self.loop.run_until_complete(self.sitl.set_param_async(gain, self.initial_gains[gain]))
+
+            logger.info(f"Setting drone to {self.initial_pose}")
             
-            ### will always place at 0 0 90 in gazebo convention
             self.gazebo.pause_simulation()
             self.gazebo.transport_position(self.sitl.name, [self.initial_pose["x_m"], self.initial_pose["y_m"], self.initial_pose["z_m"]], euler_to_quaternion(None))
             self.gazebo.resume_simulation()
 
             self.loop.run_until_complete(self.sitl.transport_and_reset_async([self.initial_pose["x_m"], self.initial_pose["y_m"], self.initial_pose["z_m"]], euler_to_quaternion(None)))
-            # logger.info(f"Drone set to {self.initial_pose["x_m"], self.initial_pose["y_m"], self.initial_pose["z_m"]}")
         
         observation, info = self.loop.run_until_complete(self._async_get_observation())
         logger.info(observation)
         return observation, info  # observation, info
-
-
 
     async def _async_get_observation(self):
         """
@@ -254,17 +252,14 @@ class ArdupilotEnv(gym.Env):
         return {
             'x_m': self.goal_pose['x_m'],
             'y_m': self.goal_pose['y_m'],    
-            'z_m': max(self.goal_pose['z_m'], 0.3) + self.np_random.uniform(-1.5, 1.5)
+            'z_m': max(self.goal_pose['z_m'], 0.3) + self.np_random.uniform(-2.0, 2.0)
         }, self.initial_attitude, initial_gains
     
     def step(self, action):
         self.episode_step += 1
         obs, reward, done, truncated, info = self.loop.run_until_complete(self._async_step(action))
-        print(self.goal_pose)
         # self.old_observation = obs
         return obs, reward, done, truncated, info
-
-
 
     async def _async_step(self, action):
         """
@@ -396,8 +391,6 @@ class ArdupilotEnv(gym.Env):
             description[f"action_{i}"] = f"Gain adjustment: {key}"
         return description
 
-
-
     async def _async_arm(self):
         logger.info("Arming...")
         drone = await self.sitl._get_mavsdk_connection()
@@ -513,11 +506,6 @@ class ArdupilotEnv(gym.Env):
             r += kappa * self.max_stable_time - nu * self.accumulated_huber_error
         return r
     
-    def __compatibility_checks(self):
-        if self.config['environment_config']['mode'] not in ['position', 'attitude', 'stabilize', 'althold', 'altitude']:
-            raise ValueError(f"Invalid mode: {self.config['environment_config']['mode']}")
-        logger.warning(f"compatibility checks is not implemented")
-
     def close(self):
         """Clean up resources."""
         logger.info("Closing environment...")

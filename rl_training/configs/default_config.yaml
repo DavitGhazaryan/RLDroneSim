@@ -1,124 +1,146 @@
+# =============================================================================
+# PID RL Training Configuration File
+# =============================================================================
+# This file contains all configuration parameters for training DDPG agents
+# on the ArduPilot environment. Modify the values below to experiment with
+# different hyperparameters without changing the code.
+# =============================================================================
+
 # Environment configuration
+# Controls how the environment behaves and what observations/actions are used
 environment_config:
-  max_episode_steps: 5
-  mode: "altitude"  # position, attitude, stabilize, althold, altitude
-  observable_gains: "PSC_POSZ_P+PSC_VELZ_P"
-  observable_states: "altitude_m"
-  action_gains: "PSC_POSZ_P+PSC_VELZ_P" 
-  reward_function: "error"   # error, waypoint, pid_tuning, custom (corresponds to the sections in reward_config: based on this RewardClass is defined)
-  action_dt: 0.1             # interval between action and its observation
-  takeoff_altitude: 5.0
+  max_episode_steps: 50          # Maximum steps per episode
+  mode: "altitude"               # Flight mode: position, attitude, stabilize, althold, altitude
+  observable_gains: "PSC_POSZ_P+PSC_VELZ_P"  # Which PID gains to observe
+  observable_states: "altitude_m" # Which states to observe
+  action_gains: "PSC_POSZ_P+PSC_VELZ_P"      # Which PID gains to adjust
+  reward_function: "error"       # Reward function type: error, waypoint, pid_tuning, custom
+  action_dt: 0.1                 # Time interval between action and observation
+  takeoff_altitude: 5.0          # Target takeoff altitude in meters
+  observation_space_type: "flattened"  # Observation format: flattened, structured
+  action_space_type: "continuous"      # Action format: continuous, discrete
+  normalize_observations: true   # Whether to normalize observations
+  normalize_actions: false       # Whether to normalize actions
 
 # ArduPilot SITL configuration
+# Settings for the ArduPilot Software In The Loop simulation
 ardupilot_config:
-  ardupilot_path: "/home/pid_rl/ardupilot"                       # Path to ArduPilot directory
-  vehicle: "ArduCopter"                                          # Vehicle type (copter, plane, rover)
-  frame: "gazebo-iris"                                           # Vehicle model for Gazebo integration
-  name: "iris_with_ardupilot"
-  ideal_sensors: true
+  ardupilot_path: "/home/pid_rl/ardupilot"    # Path to ArduPilot directory
+  vehicle: "ArduCopter"                        # Vehicle type: copter, plane, rover
+  frame: "gazebo-iris"                         # Vehicle model for Gazebo
+  name: "iris_with_ardupilot"                  # Vehicle name
+  ideal_sensors: true                           # Use ideal sensor models
   
-  # optional
-  instance:  0                                                   # Instance number
-  count: null                                                    # Number of instances
-  location: null                                                 # Home location lat,lon,alt,yaw
-  speedup: 5                                                   # Simulation speed multiplier
-  wipe_eeprom: true                                              # Wipe EEPROM on startup
-  use_dir: null                                                  # Use directory for SITL
-  delay_start: null                                              # Delay startup by this many seconds
-  model: "JSON"                                                  # Vehicle model for Gazebo integration
-  clean: true                                                    # clean build
-  no_rebuild: true                                               # don't rebuild
-  no_configure: true                                             # don't configure
-  no_mavproxy: false                                             # Don't launch MAVProxy
-  udp: true                                                      # Use UDP for communication
-  map: false                                                     # Use map for navigation
-  console: false                                                 # Use console for debugging
-  mavproxy_args: null
-  timeout: 30.0                                                  # SITL startup timeout
-  min_startup_delay: 5.0                                         # Assume ready after this many seconds
-  mavsdk_port: 14550                                             # MAVSDK connection port 
-  master_port: 14551                                             # MAVLink master port for low level communication (same as udp_out)
-  port_check_timeout: 30.0                                       # Timeout for checking if ports are available
+  # Optional parameters (set to null to use defaults)
+  instance: 0                                   # Instance number for multiple vehicles
+  count: null                                   # Number of vehicle instances
+  location: null                                # Home location: [lat, lon, alt, yaw]
+  speedup: 5                                    # Simulation speed multiplier
+  wipe_eeprom: true                            # Clear EEPROM on startup
+  use_dir: null                                # Custom directory for SITL
+  delay_start: null                            # Startup delay in seconds
+  model: "JSON"                                # Vehicle model format
+  clean: true                                  # Clean build before starting
+  no_rebuild: true                             # Skip rebuilding
+  no_configure: true                           # Skip configuration
+  no_mavproxy: false                           # Launch MAVProxy
+  udp: true                                    # Use UDP communication
+  map: false                                   # Show map interface
+  console: false                               # Show console interface
+  mavproxy_args: null                          # Additional MAVProxy arguments
+  timeout: 30.0                                # SITL startup timeout
+  min_startup_delay: 5.0                       # Minimum startup delay
+  mavsdk_port: 14550                           # MAVSDK connection port
+  master_port: 14551                           # MAVLink master port
+  port_check_timeout: 30.0                     # Port availability timeout
 
 # Gazebo configuration
+# Settings for the Gazebo simulation environment
+# control the wind from the sdf file directly
 gazebo_config:
-  sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  
-  gui: true       
-  timeout: 10.0
-  verbose: false         # Verbosity level
+  sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  # World file path
+  gui: true                                    # Show Gazebo GUI
+  timeout: 10.0                                # Gazebo startup timeout
+  verbose: false                               # Verbose output
 
-# # Reward function configuration // Letter the different terms in the reward function can be controlled here, comment out the ones you don't want to use or put 0
-# reward_config:
-#   hover:
-#     target_position: [0.0, 0.0, 10.0]
-#     position_weight: 1.0
-#     velocity_weight: 0.1
-#     attitude_weight: 0.5
-#     action_weight: 0.01
-#     crash_penalty: -100.0
+# DDPG algorithm parameters
+# Core hyperparameters for the DDPG algorithm
+ddpg_params:
+  learning_rate: 0.001                          # Learning rate for actor and critic networks
+  buffer_size: 100000                          # Size of replay buffer
+  learning_starts: 100                          # Steps before learning begins
+  batch_size: 64                               # Batch size for training
+  tau: 0.005                                   # Soft update coefficient for target networks
+  gamma: 0.99                                  # Discount factor for future rewards
+  train_freq: 1                                # Training frequency (every N steps)
+  gradient_steps: 1                             # Gradient steps per training update
+  action_noise:                                # Action noise for exploration
+    type: "NormalActionNoise"                   # Noise type: NormalActionNoise
+    mean: 0.0                                  # Mean of noise distribution
+    sigma: 0.1                                 # Standard deviation of noise
+  target_policy_noise: 0.2                     # Target policy noise (for TD3-like behavior)
+  target_noise_clip: 0.5                       # Target noise clipping
+  verbose: 1                                   # Verbosity level
+  tensorboard_log: "./logs/ddpg_ardupilot/"    # TensorBoard log directory
+  policy_kwargs: null                          # Additional policy arguments
+  seed: null                                   # Random seed (null for random)
+  device: "auto"                               # Device for training (auto, cpu, cuda)
+  _init_setup_model: true                      # Initialize model setup
+
+# Training configuration
+# Settings for the training process
+training_config:
+  total_timesteps: 1000                        # Total training timesteps
+  eval_freq: 500                               # Evaluation frequency
+  save_freq: 500                               # Model saving frequency
+  log_freq: 100                                # Logging frequency
+  tensorboard_log_dir: "./logs"                # TensorBoard log directory
+  checkpoint_dir: "./models"                   # Model checkpoint directory
+  model_name_prefix: "ddpg_ardupilot"          # Model name prefix
+  progress_bar: true                           # Show training progress bar
+  reset_num_timesteps: true                    # Reset timestep counter
+
+# Callbacks configuration
+# Callbacks for logging, checkpointing, and evaluation during training
+callbacks:
+  - type: "checkpoint"                         # Checkpoint callback type
+    save_freq: 500                             # Save frequency for checkpoints
+    save_path: "./models"                      # Path to save checkpoints
+    name_prefix: "ddpg_ardupilot"              # Checkpoint name prefix
+
+# Evaluation configuration
+# Settings for evaluating trained models
+evaluation_config:
+  n_eval_episodes: 5                           # Number of evaluation episodes
+  deterministic: true                           # Use deterministic actions
+  save_results: true                            # Save evaluation results
+  plot_results: true                            # Plot evaluation results
+
+# Reward function configuration
+# Parameters for different reward function types
+# Comment out sections you don't want to use or set weights to 0
+reward_config:
+  hover:                                       # Hover reward function
+    target_position: [0.0, 0.0, 10.0]         # Target hover position [x, y, z]
+    position_weight: 1.0                       # Weight for position error
+    velocity_weight: 0.1                       # Weight for velocity error
+    attitude_weight: 0.5                       # Weight for attitude error
+    action_weight: 0.01                        # Weight for action magnitude
+    crash_penalty: -100.0                      # Penalty for crashes
   
-#   waypoint:
-#     waypoints: [[10.0, 0.0, 10.0], [0.0, 10.0, 10.0], [0.0, 0.0, 10.0]]
-#     position_weight: 1.0
-#     velocity_weight: 0.1
-#     waypoint_reached_reward: 100.0
-#     crash_penalty: -100.0
-#     waypoint_threshold: 5.0
+  waypoint:                                    # Waypoint navigation reward
+    waypoints: [[10.0, 0.0, 10.0], [0.0, 10.0, 10.0], [0.0, 0.0, 10.0]]  # Waypoint list
+    position_weight: 1.0                       # Weight for position error
+    velocity_weight: 0.1                       # Weight for velocity error
+    waypoint_reached_reward: 100.0             # Reward for reaching waypoints
+    crash_penalty: -100.0                      # Penalty for crashes
+    waypoint_threshold: 5.0                    # Distance threshold for waypoint completion
   
-#   pid_tuning:
-#     setpoint: [0.0, 0.0, 10.0, 0.0]
-#     error_weight: 1.0
-#     overshoot_penalty: 0.5
-#     settling_time_weight: 0.1
-#     crash_penalty: -100.0
-#     settling_threshold: 0.1
-
-# # TD3 algorithm parameters
-# td3_params:
-#   learning_rate: 1e-3
-#   buffer_size: 1000000
-#   learning_starts: 100
-#   batch_size: 100
-#   tau: 0.005
-#   gamma: 0.99
-#   train_freq: 1
-#   gradient_steps: 1
-#   action_noise: null
-#   target_policy_noise: 0.2
-#   target_noise_clip: 0.5
-#   policy_delay: 2
-#   tensorboard_log: null
-#   policy_kwargs: null
-#   verbose: 0
-#   seed: null
-#   device: "auto"
-#   _init_setup_model: true
-
-# # Training configuration
-# training_config:
-#   total_timesteps: 1000000
-#   eval_freq: 10000
-#   save_freq: 50000
-#   log_freq: 1000
-#   tensorboard_log_dir: "./logs"
-#   checkpoint_dir: "./checkpoints"
-
-# # Callbacks configuration
-# callbacks:
-#   - type: "logging"
-#     log_freq: 1000
-#   - type: "evaluation"
-#     eval_freq: 10000
-#     n_eval_episodes: 10
-#   - type: "tensorboard"
-#     log_dir: "./logs"
-#   - type: "checkpoint"
-#     save_freq: 50000
-#     save_path: "./checkpoints"
-
-# # Evaluation configuration
-# evaluation_config:
-#   n_eval_episodes: 10
-#   deterministic: true
-#   save_results: true
-#   plot_results: true 
+  pid_tuning:                                  # PID tuning reward function
+    setpoint: [0.0, 0.0, 10.0, 0.0]           # Target setpoint [x, y, z, yaw]
+    error_weight: 1.0                          # Weight for tracking error
+    overshoot_penalty: 0.5                     # Penalty for overshooting
+    settling_time_weight: 0.1                  # Weight for settling time
+    crash_penalty: -100.0                      # Penalty for crashes
+    settling_threshold: 0.1                    # Settling threshold
+  

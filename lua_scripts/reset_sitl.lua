@@ -15,7 +15,6 @@ local function capture_origin_once()
   local h = ahrs:get_home()
   if not h then return false end
   origin = Location(); origin:lat(h:lat()); origin:lng(h:lng()); origin:alt(h:alt())
-  gcs:send_text(6,"Origin locked")
   return true
 end
 
@@ -42,8 +41,6 @@ local function do_reset(n_m,e_m,agl_m)
 
   -- Clear FCU targets
   -- vehicle:set_target_velocity_NED(ZERO)
-
-  gcs:send_text(6, string.format("Reset to N=%.2f E=%.2f AGL=%.2f (origin held)", n_m, e_m, agl_m))
 end
 
 local function loop()
@@ -59,5 +56,4 @@ local function loop()
   return loop, 200
 end
 
-gcs:send_text(0,"Reset: SCR_USER1 edge; offsets N/E in USER2/3, AGL in USER4; origin fixed")
 return loop, 200

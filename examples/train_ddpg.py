@@ -10,8 +10,38 @@ import os
 sys.path.insert(0, "/home/pid_rl")
 
 from rl_training.environments import ArdupilotEnv
-from rl_training.utils.utils import load_config
+from rl_training.utils.utils import load_config, validate_config, demonstrate_observation_action_format, evaluate_agent
 import numpy as np
+
+def create_action_noise_from_config(action_noise_config, action_dim):
+    """
+    Create action noise object from configuration.
+    
+    Args:
+        action_noise_config: Action noise configuration dictionary
+        action_dim: Dimension of the action space
+        
+    Returns:
+        Action noise object
+    """
+    noise_type = action_noise_config.get('type', 'NormalActionNoise')
+    
+    if noise_type == 'NormalActionNoise':
+        from stable_baselines3.common.noise import NormalActionNoise
+        mean = action_noise_config.get('mean', 0.0)
+        sigma = action_noise_config.get('sigma', 0.1)
+        
+        return NormalActionNoise(
+            mean=mean * np.ones(action_dim),
+            sigma=sigma * np.ones(action_dim)
+        )
+    else:
+        # Default to no noise if type not recognized
+        from stable_baselines3.common.noise import NormalActionNoise
+        return NormalActionNoise(
+            mean=np.zeros(action_dim),
+            sigma=0.1 * np.ones(action_dim)
+        )
 
 
 def create_environment(config_path: str):
@@ -38,14 +68,14 @@ def create_environment(config_path: str):
     return env, config
 
 
-def train_ddpg_agent(env, config, total_timesteps=1000):
+def train_ddpg_agent(env, config, total_timesteps=None):
     """
     Train a DDPG agent on the modified environment.
     
     Args:
         env: Modified ArdupilotEnv
         config: Configuration dictionary
-        total_timesteps: Total training timesteps
+        total_timesteps: Total training timesteps (overrides config if provided)
         
     Returns:
         Trained DDPG model
@@ -55,140 +85,75 @@ def train_ddpg_agent(env, config, total_timesteps=1000):
     from stable_baselines3.common.noise import NormalActionNoise
     from stable_baselines3.common.callbacks import CheckpointCallback
 
+    # Get training parameters from config
+    training_config = config.get('training_config', {})
+    ddpg_config = config.get('ddpg_params', {})
+    
+    # Use provided total_timesteps or fall back to config
+    if total_timesteps is None:
+        total_timesteps = training_config.get('total_timesteps', 1000)
+    
     print(f"\n🚀 Starting DDPG training for {total_timesteps} timesteps...")
     
     # Create action noise for exploration
     action_dim = env.action_space.shape[0]
-    action_noise = NormalActionNoise(
-        mean=np.zeros(action_dim),
-        sigma=0.1 * np.ones(action_dim)
-    )
+    action_noise_config = ddpg_config.get('action_noise', {})
     
-    # Create the DDPG model
+    action_noise = create_action_noise_from_config(action_noise_config, action_dim)
+    
+    # Create the DDPG model with config parameters
     model = DDPG(
         "MlpPolicy",
         env,
         action_noise=action_noise,
-        learning_rate=1e-3,
-        buffer_size=100000,
-        learning_starts=100,
-        batch_size=64,
-        tau=0.005,
-        gamma=0.99,
-        train_freq=1,
-        gradient_steps=1,
-        verbose=1,
-        tensorboard_log="./logs/ddpg_ardupilot/"
+        learning_rate=ddpg_config.get('learning_rate', 1e-3),
+        buffer_size=ddpg_config.get('buffer_size', 100000),
+        learning_starts=ddpg_config.get('learning_starts', 100),
+        batch_size=ddpg_config.get('batch_size', 64),
+        tau=ddpg_config.get('tau', 0.005),
+        gamma=ddpg_config.get('gamma', 0.99),
+        train_freq=ddpg_config.get('train_freq', 1),
+        gradient_steps=ddpg_config.get('gradient_steps', 1),
+        verbose=ddpg_config.get('verbose', 1),
+        tensorboard_log=ddpg_config.get('tensorboard_log', "./logs/ddpg_ardupilot/"),
+        policy_kwargs=ddpg_config.get('policy_kwargs'),
+        seed=ddpg_config.get('seed'),
+        device=ddpg_config.get('device', "auto"),
+        _init_setup_model=ddpg_config.get('_init_setup_model', True)
     )
     
-    # Create checkpoint callback
-    checkpoint_callback = CheckpointCallback(
-        save_freq=500,
-        save_path="./models/",
-        name_prefix="ddpg_ardupilot"
-    )
+    # Create checkpoint callback from config
+    callbacks_config = config.get('callbacks', [])
+    checkpoint_callback = None
+    
+    for callback_config in callbacks_config:
+        if callback_config.get('type') == 'checkpoint':
+            checkpoint_callback = CheckpointCallback(
+                save_freq=callback_config.get('save_freq', 500),
+                save_path=callback_config.get('save_path', "./models/"),
+                name_prefix=callback_config.get('name_prefix', "ddpg_ardupilot")
+            )
+            break
+    
+    # If no checkpoint callback found in config, create default one
+    if checkpoint_callback is None:
+        checkpoint_callback = CheckpointCallback(
+            save_freq=training_config.get('save_freq', 500),
+            save_path=training_config.get('checkpoint_dir', "./models/"),
+            name_prefix=training_config.get('model_name_prefix', "ddpg_ardupilot")
+        )
     
     # Train the model
     print("🎯 Training started...")
     model.learn(
         total_timesteps=total_timesteps,
         callback=checkpoint_callback,
-        progress_bar=True
+        progress_bar=training_config.get('progress_bar', True),
+        reset_num_timesteps=training_config.get('reset_num_timesteps', True)
     )
     
     print("✅ Training completed!")
     return model
-
-def evaluate_agent(model, env, num_episodes=5):
-    """
-    Evaluate the trained agent.
-    
-    Args:
-        model: Trained DDPG model
-        env: Modified ArdupilotEnv
-        num_episodes: Number of evaluation episodes
-        
-    Returns:
-        Evaluation results
-    """
-    print(f"\n🧪 Evaluating agent over {num_episodes} episodes...")
-    
-    episode_rewards = []
-    episode_lengths = []
-    
-    for episode in range(num_episodes):
-        obs, info = env.reset()
-        episode_reward = 0.0
-        episode_length = 0
-        
-        print(f"   Episode {episode + 1}: ", end="")
-        
-        while True:
-            # Get action from the trained model
-            action, _ = model.predict(obs, deterministic=True)
-            
-            # Take step in environment
-            obs, reward, terminated, truncated, info = env.step(action)
-            
-            episode_reward += reward
-            episode_length += 1
-            
-            if terminated or truncated:
-                break
-        
-        episode_rewards.append(episode_reward)
-        episode_lengths.append(episode_length)
-        
-        print(f"Reward: {episode_reward:.2f}, Length: {episode_length}")
-    
-    # Calculate statistics
-    avg_reward = np.mean(episode_rewards)
-    std_reward = np.std(episode_rewards)
-    avg_length = np.mean(episode_lengths)
-    
-    print(f"\n📊 Evaluation Results:")
-    print(f"   Average reward: {avg_reward:.2f} ± {std_reward:.2f}")
-    print(f"   Average episode length: {avg_length:.1f} steps")
-    print(f"   Success rate: {sum(1 for r in episode_rewards if r > 0) / len(episode_rewards):.1%}")
-    
-    return {
-        'episode_rewards': episode_rewards,
-        'episode_lengths': episode_lengths,
-        'avg_reward': avg_reward,
-        'std_reward': std_reward,
-        'avg_length': avg_length
-    }
-
-
-def demonstrate_observation_action_format(env):
-    """Demonstrate the new observation and action format."""
-    
-    print(f"\n🔍 Demonstrating Observation and Action Format")
-    print("=" * 60)
-    
-    # Show sample observations and actions
-    sample_obs = env.observation_space.sample()
-    sample_action = env.action_space.sample()
-    
-    print(f"📊 Sample Observation (Array):")
-    print(f"   Shape: {sample_obs.shape}")
-    print(f"   Values: {sample_obs}")
-    
-    print(f"\n🎯 Sample Action (Array):")
-    print(f"   Shape: {sample_action.shape}")
-    print(f"   Values: {sample_action}")
-    
-    # Show what each index represents
-    obs_mapping = env.get_observation_key_mapping()
-    action_mapping = env.get_action_key_mapping()
-    
-    print(f"\n🗺️  Observation Index Meaning:")
-    for key, idx in obs_mapping.items():
-        print(f"   obs[{idx}] = {key} = {sample_obs[idx]:.3f}")
-    
-    print(f"\n🎯 Action Index Meaning:")
-    for key, idx in action_mapping.items():
-        print(f"   action[{idx}] = {key} adjustment = {sample_action[idx]:.3f}")
     
 
 def main():
@@ -199,11 +164,22 @@ def main():
     
     # Configuration
     config_path = '/home/pid_rl/rl_training/configs/default_config.yaml'
-    total_timesteps = 1000  # Adjust based on your needs
     
     try:
         # Step 1: Create environment (now directly compatible)
         env, config = create_environment(config_path)
+        
+        # Validate configuration
+        if not validate_config(config, "ddpg"):
+            print("❌ Configuration validation failed. Please check your config file.")
+            return
+        
+        # Store config in environment for access by other functions
+        env.config = config
+        
+        # Get training parameters from config
+        training_config = config.get('training_config', {})
+        total_timesteps = training_config.get('total_timesteps', 1000)
         
         # Step 2: Demonstrate the new format
         demonstrate_observation_action_format(env)
@@ -216,7 +192,7 @@ def main():
             results = evaluate_agent(model, env)
             
             # Step 5: Save the model
-            model_path = "./models/ddpg_ardupilot_final"
+            model_path = f"./{training_config.get('checkpoint_dir', './models')}/{training_config.get('model_name_prefix', 'ddpg_ardupilot')}_final"
             model.save(model_path)
             print(f"\n💾 Model saved to: {model_path}")
             
