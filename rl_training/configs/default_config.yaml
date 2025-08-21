@@ -1,12 +1,12 @@
 # Environment configuration
 environment_config:
-  max_episode_steps: 50
+  max_episode_steps: 5
   mode: "altitude"  # position, attitude, stabilize, althold, altitude
   observable_gains: "PSC_POSZ_P+PSC_VELZ_P"
   observable_states: "altitude_m"
   action_gains: "PSC_POSZ_P+PSC_VELZ_P" 
   reward_function: "error"   # error, waypoint, pid_tuning, custom (corresponds to the sections in reward_config: based on this RewardClass is defined)
-  action_dt: 0.3             # interval between action and its observation
+  action_dt: 0.1             # interval between action and its observation
   takeoff_altitude: 5.0
 
 # ArduPilot SITL configuration
@@ -21,7 +21,7 @@ ardupilot_config:
   instance:  0                                                   # Instance number
   count: null                                                    # Number of instances
   location: null                                                 # Home location lat,lon,alt,yaw
-  speedup: 10                                                   # Simulation speed multiplier
+  speedup: 5                                                   # Simulation speed multiplier
   wipe_eeprom: true                                              # Wipe EEPROM on startup
   use_dir: null                                                  # Use directory for SITL
   delay_start: null                                              # Delay startup by this many seconds

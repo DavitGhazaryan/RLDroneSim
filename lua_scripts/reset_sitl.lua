@@ -31,7 +31,7 @@ end
 local function do_reset(n_m,e_m,agl_m)
   if not capture_origin_once() then return end
   local tgt = target_from_offsets(n_m,e_m,agl_m)
-  local target = target_from_offsets(n_m+1,e_m+1,agl_m+1)
+  local target = target_from_offsets(n_m,e_m,agl_m)
   local q = Quaternion() -- identity (keep simple for altitude work)
 
   -- SOFT estimator reset: keep origin/home; just reset EKF state
@@ -41,8 +41,7 @@ local function do_reset(n_m,e_m,agl_m)
   sim:set_pose(0, tgt, q, ZERO, ZERO)
 
   -- Clear FCU targets
-  vehicle:set_target_location(target)
-  vehicle:set_target_velocity_NED(ZERO)
+  -- vehicle:set_target_velocity_NED(ZERO)
 
   gcs:send_text(6, string.format("Reset to N=%.2f E=%.2f AGL=%.2f (origin held)", n_m, e_m, agl_m))
 end

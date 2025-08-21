@@ -7,7 +7,7 @@
 !tests/
 !README.md
 !simple_world.sdf
-!scripts/    
+!lua_scripts  
 !examples/
 !docker-compose.yml
 !docker-compose-wslg.yml

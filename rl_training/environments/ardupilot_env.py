@@ -12,8 +12,7 @@ sys.path.insert(0, "/home/student/Dev/pid_rl")
 
 from rl_training.utils.gazebo_interface import GazeboInterface
 from rl_training.utils.ardupilot_sitl import ArduPilotSITL
-from rl_training.utils.utils import euler_to_quaternion, lat_lon_to_xy_meters, xy_meters_to_lat_lon
-
+from rl_training.utils.utils import euler_to_quaternion
 logger = logging.getLogger("Env")
 logger.setLevel(logging.INFO)
 
@@ -30,7 +29,7 @@ class ArdupilotEnv(gym.Env):
 
         self.config = config
 
-        self.__compatibility_checks()
+        # self.__compatibility_checks()
 
         self.gazebo = GazeboInterface(self.config['gazebo_config'])
         self.sitl = ArduPilotSITL(self.config['ardupilot_config'])
@@ -165,7 +164,7 @@ class ArdupilotEnv(gym.Env):
                 'yaw_deg': attitude.yaw_deg
             }
 
-            self._async_mission_function = self._setup_mission()
+            self._async_mission_function = self._setup_mission()   # same x, y, z
             self.loop.run_until_complete(self._async_mission_function())
         else:
             logger.info("Resetting the Environment")
@@ -174,16 +173,18 @@ class ArdupilotEnv(gym.Env):
             self.max_stable_time = 0
             self.accumulated_huber_error = 0.0
 
+            print(f"Setting to {self.initial_pose}")
 
             for gain in self.action_gains:
                 self.loop.run_until_complete(self.sitl.set_param_async(gain, self.initial_gains[gain]))
             
             ### will always place at 0 0 90 in gazebo convention
-            # self.gazebo.pause_simulation()
-            self.gazebo.transport_position(self.sitl.name, [0, 0, max(self.initial_pose['z_m'], 0.2)], euler_to_quaternion(None))
-            self.loop.run_until_complete(self.sitl.transport_and_reset_async([0, 0, max(self.initial_pose['z_m'], 0.2)], euler_to_quaternion(None)))
-            # self.gazebo.resume_simulation()
-            # self.gazebo.transport_position(self.sitl.name, [0, 0, self.initial_pose['relative_altitude_m']], euler_to_quaternion(self.initial_attitude))
+            self.gazebo.pause_simulation()
+            self.gazebo.transport_position(self.sitl.name, [self.initial_pose["x_m"], self.initial_pose["y_m"], self.initial_pose["z_m"]], euler_to_quaternion(None))
+            self.gazebo.resume_simulation()
+
+            self.loop.run_until_complete(self.sitl.transport_and_reset_async([self.initial_pose["x_m"], self.initial_pose["y_m"], self.initial_pose["z_m"]], euler_to_quaternion(None)))
+            # logger.info(f"Drone set to {self.initial_pose["x_m"], self.initial_pose["y_m"], self.initial_pose["z_m"]}")
         
         observation, info = self.loop.run_until_complete(self._async_get_observation())
         logger.info(observation)
@@ -234,7 +235,7 @@ class ArdupilotEnv(gym.Env):
                 self.goal_pose = {
                     'x_m': self.initial_pose['x_m'],
                     'y_m': self.initial_pose['y_m'],
-                    'z_m': self.takeoff_altitude - 0.321
+                    'z_m': self.takeoff_altitude + 0.19
                 }
                 self.goal_orientation = self.initial_attitude.copy()
 
@@ -246,56 +247,23 @@ class ArdupilotEnv(gym.Env):
                 raise ValueError(f"Invalid mode: {self.config['environment_config']['mode']}")
 
     def get_random_initial_state(self):
-        # TODO: Implement random initial state
         initial_gains = {}
         for gain in self.action_gains:
             # initial_gains[gain] = self.np_random.uniform(0.8, 5.2)
-            initial_gains[gain] = max(self.initial_gains[gain] + self.np_random.uniform(-2.0, 2.0), 0)
+            initial_gains[gain] = max(self.initial_gains[gain] + self.np_random.uniform(-3.0, 3.0), 0)
         return {
-            'x_m': self.initial_pose['x_m'],
-            'y_m': self.initial_pose['y_m'],    
-            'z_m': self.initial_pose['z_m'] + self.np_random.uniform(-0.5, 0.5)
+            'x_m': self.goal_pose['x_m'],
+            'y_m': self.goal_pose['y_m'],    
+            'z_m': max(self.goal_pose['z_m'], 0.3) + self.np_random.uniform(-1.5, 1.5)
         }, self.initial_attitude, initial_gains
     
     def step(self, action):
         self.episode_step += 1
         obs, reward, done, truncated, info = self.loop.run_until_complete(self._async_step(action))
+        print(self.goal_pose)
         # self.old_observation = obs
         return obs, reward, done, truncated, info
 
-
-    def get_observation_key_mapping(self):
-        """Get mapping from observation keys to array indices."""
-        mapping = {}
-        all_keys = self.observable_gains + self.observable_states
-        for i, key in enumerate(all_keys):
-            mapping[key] = i
-        return mapping
-    
-    def get_action_key_mapping(self):
-        """Get mapping from action keys to array indices."""
-        mapping = {}
-        for i, key in enumerate(self.action_gains):
-            mapping[key] = i
-        return mapping
-    
-    def get_observation_description(self):
-        """Get description of what each observation index represents."""
-        description = {}
-        all_keys = self.observable_gains + self.observable_states
-        for i, key in enumerate(all_keys):
-            if i < len(self.observable_gains):
-                description[f"obs_{i}"] = f"Gain: {key}"
-            else:
-                description[f"obs_{i}"] = f"State: {key}"
-        return description
-    
-    def get_action_description(self):
-        """Get description of what each action index represents."""
-        description = {}
-        for i, key in enumerate(self.action_gains):
-            description[f"action_{i}"] = f"Gain adjustment: {key}"
-        return description
 
 
     async def _async_step(self, action):
@@ -338,7 +306,7 @@ class ArdupilotEnv(gym.Env):
                 return True, "crash: excessive pitch/roll"
 
             # Velocity checks
-            if abs(vel.north_m_s) > 2 or abs(vel.east_m_s) > 2 or abs(vel.down_m_s) > 2:
+            if abs(vel.north_m_s) > 3 or abs(vel.east_m_s) > 3 or abs(vel.down_m_s) > 3:
                 return True, "vel exceeds limits"
             
 
@@ -352,7 +320,7 @@ class ArdupilotEnv(gym.Env):
             dist_now = np.linalg.norm(np.array([pose.north_m, pose.east_m, -pose.down_m]) 
                                       - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
             
-            if dist_now > 1.2 * dist_init and dist_now > 0.01:
+            if dist_now > 1.7 * dist_init and dist_now > 0.01:
                 return True, "too far from goal"
             
             # 4. goal is reached - check both position and altitude
@@ -394,6 +362,41 @@ class ArdupilotEnv(gym.Env):
         }
         
         return observation, reward, terminated, truncated, info
+
+    def get_observation_key_mapping(self):
+        """Get mapping from observation keys to array indices."""
+        mapping = {}
+        all_keys = self.observable_gains + self.observable_states
+        for i, key in enumerate(all_keys):
+            mapping[key] = i
+        return mapping
+    
+    def get_action_key_mapping(self):
+        """Get mapping from action keys to array indices."""
+        mapping = {}
+        for i, key in enumerate(self.action_gains):
+            mapping[key] = i
+        return mapping
+    
+    def get_observation_description(self):
+        """Get description of what each observation index represents."""
+        description = {}
+        all_keys = self.observable_gains + self.observable_states
+        for i, key in enumerate(all_keys):
+            if i < len(self.observable_gains):
+                description[f"obs_{i}"] = f"Gain: {key}"
+            else:
+                description[f"obs_{i}"] = f"State: {key}"
+        return description
+    
+    def get_action_description(self):
+        """Get description of what each action index represents."""
+        description = {}
+        for i, key in enumerate(self.action_gains):
+            description[f"action_{i}"] = f"Gain adjustment: {key}"
+        return description
+
+
 
     async def _async_arm(self):
         logger.info("Arming...")
