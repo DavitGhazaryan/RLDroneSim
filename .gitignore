@@ -17,6 +17,8 @@
 !run-wsl.sh
 !Makefile
 
+rl_training/runs/
+
 # Python bytecode and cache files
 __pycache__/
 *.pyc

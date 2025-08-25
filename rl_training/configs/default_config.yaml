@@ -6,24 +6,19 @@
 # different hyperparameters without changing the code.
 # =============================================================================
 
-# Environment configuration
-# Controls how the environment behaves and what observations/actions are used
 environment_config:
-  max_episode_steps: 50          # Maximum steps per episode
+  max_episode_steps: 20          
   mode: "altitude"               # Flight mode: position, attitude, stabilize, althold, altitude
-  observable_gains: "PSC_POSZ_P+PSC_VELZ_P"  # Which PID gains to observe
+  observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"  # Which PID gains to observe
   observable_states: "altitude_m" # Which states to observe
-  action_gains: "PSC_POSZ_P+PSC_VELZ_P"      # Which PID gains to adjust
-  reward_function: "error"       # Reward function type: error, waypoint, pid_tuning, custom
+  action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"      # Which PID gains to adjust
+  reward_function: "error"       
   action_dt: 0.1                 # Time interval between action and observation
-  takeoff_altitude: 5.0          # Target takeoff altitude in meters
-  observation_space_type: "flattened"  # Observation format: flattened, structured
-  action_space_type: "continuous"      # Action format: continuous, discrete
-  normalize_observations: true   # Whether to normalize observations
-  normalize_actions: false       # Whether to normalize actions
+  takeoff_altitude: 5.0          #  meters
+  # normalize_observations: true   # Whether to normalize observations
+  # normalize_actions: false       # Whether to normalize actions
 
-# ArduPilot SITL configuration
-# Settings for the ArduPilot Software In The Loop simulation
+
 ardupilot_config:
   ardupilot_path: "/home/pid_rl/ardupilot"    # Path to ArduPilot directory
   vehicle: "ArduCopter"                        # Vehicle type: copter, plane, rover
@@ -55,20 +50,32 @@ ardupilot_config:
   port_check_timeout: 30.0                     # Port availability timeout
 
 # Gazebo configuration
-# Settings for the Gazebo simulation environment
 # control the wind from the sdf file directly
 gazebo_config:
   sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  # World file path
-  gui: true                                    # Show Gazebo GUI
+  gui: true                                          # Show Gazebo GUI
   timeout: 10.0                                # Gazebo startup timeout
   verbose: false                               # Verbose output
+
+training_config:
+  total_timesteps: 200                        # Total training timesteps
+  eval_freq: 5                               # Evaluation frequency
+  save_freq: 5                               # Model saving frequency
+  log_freq: 10                                # Logging frequency
+  runs_base: "/home/pid_rl/rl_training/runs"            # Base directory for all runs
+  algo: "ddpg"                                # Algorithm name for run dir
+  mission: "hover"                                
+  model_name_prefix: "ddpg_ardupilot"          # Model name prefix
+  progress_bar: true                           # Show training progress bar
+  reset_num_timesteps: true                    # Reset timestep counter
+
 
 # DDPG algorithm parameters
 # Core hyperparameters for the DDPG algorithm
 ddpg_params:
   learning_rate: 0.001                          # Learning rate for actor and critic networks
   buffer_size: 100000                          # Size of replay buffer
-  learning_starts: 100                          # Steps before learning begins
+  learning_starts: 10                          # Steps before learning begins
   batch_size: 64                               # Batch size for training
   tau: 0.005                                   # Soft update coefficient for target networks
   gamma: 0.99                                  # Discount factor for future rewards
@@ -87,31 +94,18 @@ ddpg_params:
   device: "auto"                               # Device for training (auto, cpu, cuda)
   _init_setup_model: true                      # Initialize model setup
 
-# Training configuration
-# Settings for the training process
-training_config:
-  total_timesteps: 1000                        # Total training timesteps
-  eval_freq: 500                               # Evaluation frequency
-  save_freq: 500                               # Model saving frequency
-  log_freq: 100                                # Logging frequency
-  tensorboard_log_dir: "./logs"                # TensorBoard log directory
-  checkpoint_dir: "./models"                   # Model checkpoint directory
-  model_name_prefix: "ddpg_ardupilot"          # Model name prefix
-  progress_bar: true                           # Show training progress bar
-  reset_num_timesteps: true                    # Reset timestep counter
 
 # Callbacks configuration
 # Callbacks for logging, checkpointing, and evaluation during training
 callbacks:
   - type: "checkpoint"                         # Checkpoint callback type
-    save_freq: 500                             # Save frequency for checkpoints
-    save_path: "./models"                      # Path to save checkpoints
+    save_freq: 5                             # Save frequency for checkpoints
     name_prefix: "ddpg_ardupilot"              # Checkpoint name prefix
 
 # Evaluation configuration
 # Settings for evaluating trained models
 evaluation_config:
-  n_eval_episodes: 5                           # Number of evaluation episodes
+  n_eval_episodes: 2                           # Number of evaluation episodes
   deterministic: true                           # Use deterministic actions
   save_results: true                            # Save evaluation results
   plot_results: true                            # Plot evaluation results

@@ -6,24 +6,21 @@ The environment now returns flattened observations and actions, making it direct
 """
 
 import sys
-import os
 sys.path.insert(0, "/home/pid_rl")
 
 from rl_training.environments import ArdupilotEnv
 from rl_training.utils.utils import load_config, validate_config, demonstrate_observation_action_format, evaluate_agent
+
+from stable_baselines3 import DDPG
+from stable_baselines3.common.callbacks import CheckpointCallback
+from stable_baselines3.common.monitor import Monitor
+from rl_training.utils.tb_callback import TensorboardCallback
+
 import numpy as np
 
+
 def create_action_noise_from_config(action_noise_config, action_dim):
-    """
-    Create action noise object from configuration.
-    
-    Args:
-        action_noise_config: Action noise configuration dictionary
-        action_dim: Dimension of the action space
-        
-    Returns:
-        Action noise object
-    """
+
     noise_type = action_noise_config.get('type', 'NormalActionNoise')
     
     if noise_type == 'NormalActionNoise':
@@ -44,54 +41,14 @@ def create_action_noise_from_config(action_noise_config, action_dim):
         )
 
 
-def create_environment(config_path: str):
-
-    print("🔧 Creating  ArdupilotEnv...")
-    config = load_config(config_path)
-    
-    # Create the environment (now directly compatible)
-    env = ArdupilotEnv(config)
-
-
-    # Show mapping information
-    obs_mapping = env.get_observation_key_mapping()
-    action_mapping = env.get_action_key_mapping()
-    
-    print(f"\n🗺️  Observation Mapping:")
-    for key, idx in obs_mapping.items():
-        print(f"   obs[{idx}] = {key}")
-    
-    print(f"\n🎯 Action Mapping:")
-    for key, idx in action_mapping.items():
-        print(f"   action[{idx}] = {key}")
-    
-    return env, config
-
-
-def train_ddpg_agent(env, config, total_timesteps=None):
-    """
-    Train a DDPG agent on the modified environment.
-    
-    Args:
-        env: Modified ArdupilotEnv
-        config: Configuration dictionary
-        total_timesteps: Total training timesteps (overrides config if provided)
-        
-    Returns:
-        Trained DDPG model
-    """
-    from stable_baselines3 import DDPG
-    
-    from stable_baselines3.common.noise import NormalActionNoise
-    from stable_baselines3.common.callbacks import CheckpointCallback
+def train_ddpg_agent(env, config, run_dirs=None):
 
     # Get training parameters from config
     training_config = config.get('training_config', {})
     ddpg_config = config.get('ddpg_params', {})
     
     # Use provided total_timesteps or fall back to config
-    if total_timesteps is None:
-        total_timesteps = training_config.get('total_timesteps', 1000)
+    total_timesteps = training_config.get('total_timesteps')
     
     print(f"\n🚀 Starting DDPG training for {total_timesteps} timesteps...")
     
@@ -101,12 +58,18 @@ def train_ddpg_agent(env, config, total_timesteps=None):
     
     action_noise = create_action_noise_from_config(action_noise_config, action_dim)
     
+    # Wrap env with Monitor for episode stats
+    env = Monitor(env)
+
+    # Resolve tensorboard and models directory from run_dirs if provided
+    tensorboard_log = run_dirs['tb_dir'] if (run_dirs and 'tb_dir' in run_dirs) else None
     # Create the DDPG model with config parameters
+
     model = DDPG(
         "MlpPolicy",
         env,
         action_noise=action_noise,
-        learning_rate=ddpg_config.get('learning_rate', 1e-3),
+        learning_rate=ddpg_config.get('learning_rate'),
         buffer_size=ddpg_config.get('buffer_size', 100000),
         learning_starts=ddpg_config.get('learning_starts', 100),
         batch_size=ddpg_config.get('batch_size', 64),
@@ -115,7 +78,7 @@ def train_ddpg_agent(env, config, total_timesteps=None):
         train_freq=ddpg_config.get('train_freq', 1),
         gradient_steps=ddpg_config.get('gradient_steps', 1),
         verbose=ddpg_config.get('verbose', 1),
-        tensorboard_log=ddpg_config.get('tensorboard_log', "./logs/ddpg_ardupilot/"),
+        tensorboard_log=tensorboard_log,
         policy_kwargs=ddpg_config.get('policy_kwargs'),
         seed=ddpg_config.get('seed'),
         device=ddpg_config.get('device', "auto"),
@@ -128,28 +91,28 @@ def train_ddpg_agent(env, config, total_timesteps=None):
     
     for callback_config in callbacks_config:
         if callback_config.get('type') == 'checkpoint':
+            if run_dirs and 'models_dir' in run_dirs:
+                save_path = run_dirs['models_dir']
             checkpoint_callback = CheckpointCallback(
-                save_freq=callback_config.get('save_freq', 500),
-                save_path=callback_config.get('save_path', "./models/"),
-                name_prefix=callback_config.get('name_prefix', "ddpg_ardupilot")
+                save_freq=callback_config.get('save_freq'),
+                save_path=save_path,
+                name_prefix=callback_config.get('model_name_prefix', "ddpg_ardupilot")
             )
             break
     
-    # If no checkpoint callback found in config, create default one
-    if checkpoint_callback is None:
-        checkpoint_callback = CheckpointCallback(
-            save_freq=training_config.get('save_freq', 500),
-            save_path=training_config.get('checkpoint_dir', "./models/"),
-            name_prefix=training_config.get('model_name_prefix', "ddpg_ardupilot")
-        )
+    # Custom TB callback for domain metrics
+    gain_keys = config.get('environment_config', {}).get('action_gains', "").split('+')
+    tb_callback = TensorboardCallback(log_action_stats=True, log_gain_keys=gain_keys)
+    callbacks = [cb for cb in [checkpoint_callback, tb_callback] if cb is not None]
+
     
-    # Train the model
+    # # Train the model
     print("🎯 Training started...")
     model.learn(
         total_timesteps=total_timesteps,
-        callback=checkpoint_callback,
-        progress_bar=training_config.get('progress_bar', True),
-        reset_num_timesteps=training_config.get('reset_num_timesteps', True)
+        callback=callbacks if len(callbacks) > 1 else callbacks[0] if callbacks else None,
+        progress_bar=training_config.get('progress_bar'),
+        reset_num_timesteps=training_config.get('reset_num_timesteps'),
     )
     
     print("✅ Training completed!")
@@ -159,52 +122,60 @@ def train_ddpg_agent(env, config, total_timesteps=None):
 def main():
     """Main function demonstrating the complete workflow."""
     
-    print("🚁 Modified ArdupilotEnv + Stable Baselines DDPG Example")
+    print("🚁 ArdupilotEnv + Stable Baselines DDPG Experiment")
     print("=" * 70)
     
-    # Configuration
     config_path = '/home/pid_rl/rl_training/configs/default_config.yaml'
     
     try:
-        # Step 1: Create environment (now directly compatible)
-        env, config = create_environment(config_path)
-        
-        # Validate configuration
+        from rl_training.utils.utils import create_run_dir, save_config_copy, save_git_info, save_metrics_json
+        import subprocess
+        import os
+
+        config = load_config(config_path)
+
         if not validate_config(config, "ddpg"):
             print("❌ Configuration validation failed. Please check your config file.")
             return
         
-        # Store config in environment for access by other functions
-        env.config = config
+        print("🔧 Creating  ArdupilotEnv...")
         
-        # Get training parameters from config
+        env = ArdupilotEnv(config)
+        # demonstrate_observation_action_format(env)
+        
+        # Prepare run directory structure
         training_config = config.get('training_config', {})
-        total_timesteps = training_config.get('total_timesteps', 1000)
+        algorithm = training_config.get('algo')
+        mission = training_config.get('mission')
+        runs_base = training_config.get('runs_base')
+        run_dirs = create_run_dir(runs_base, algorithm, mission)
+        print(f"📁 Run directory: {run_dirs['run_dir']}")
+
+        # Save config and git info snapshots
+        save_config_copy(config, run_dirs['cfg_path'])
+        save_git_info(run_dirs['git_path'])
         
-        # Step 2: Demonstrate the new format
-        demonstrate_observation_action_format(env)
-        
-        # Step 3: Train DDPG agent
-        model = train_ddpg_agent(env, config, total_timesteps)
+        model = train_ddpg_agent(env, config, run_dirs)
         
         if model is not None:
-            # Step 4: Evaluate the trained agent
             results = evaluate_agent(model, env)
             
-            # Step 5: Save the model
-            model_path = f"./{training_config.get('checkpoint_dir', './models')}/{training_config.get('model_name_prefix', 'ddpg_ardupilot')}_final"
+            # Save final model in run models dir
+            model_name_prefix = training_config.get('model_name_prefix', 'ddpg_ardupilot')
+            model_path = os.path.join(run_dirs['models_dir'], f"{model_name_prefix}_final")
             model.save(model_path)
             print(f"\n💾 Model saved to: {model_path}")
-            
-            # Step 6: Show usage examples
-            print(f"\n💡 Usage Examples:")
-            print(f"   # The environment is now directly compatible!")
-            print(f"   from stable_baselines3 import DDPG")
-            print(f"   from rl_training.environments import ArdupilotEnv")
-            print(f"   ")
-            print(f"   env = ArdupilotEnv(config)  # No wrapper needed!")
-            print(f"   model = DDPG('MlpPolicy', env)")
-            print(f"   model.learn(total_timesteps=10000)")
+
+            # Save metrics summary
+            save_metrics_json(results, run_dirs['metrics_path'])
+
+            # Print ls of run directory
+            try:
+                print("\n📂 Run directory contents:")
+                out = subprocess.check_output(["bash", "-lc", f"ls -la '{run_dirs['run_dir']}' && echo '---' && find '{run_dirs['run_dir']}' -maxdepth 2 -type d -print"], stderr=subprocess.STDOUT)
+                print(out.decode())
+            except Exception as e:
+                print(f"⚠️ Could not list run directory: {e}")
             
         else:
             print("❌ Training failed - Stable Baselines3 not available")
@@ -218,7 +189,7 @@ def main():
         # Clean up
         if 'env' in locals():
             env.close()
-        print(f"\n🧹 Environment closed.")
+        print("\n🧹 Environment closed.")
 
 
 if __name__ == "__main__":

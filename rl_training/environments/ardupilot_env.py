@@ -279,12 +279,16 @@ class ArdupilotEnv(gym.Env):
         # Apply the flattened action to the gains
         for i, var in enumerate(self.action_gains):
             new_gains[var] += action[i]
-            await drone.param.set_param_float(var, max(new_gains[var], 0))
+            new_gains[var] = max(new_gains[var], 0)
+            await drone.param.set_param_float(var, new_gains[var])
+        
+        print(f"SENDING {new_gains}")
 
         await self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
 
         # get the new observation
         observation, info = await self._async_get_observation()
+        print(observation)
         pose_vel = await anext(drone.telemetry.position_velocity_ned())
         pose_ned = pose_vel.position
         attitude = await anext(drone.telemetry.attitude_euler())
@@ -353,9 +357,15 @@ class ArdupilotEnv(gym.Env):
             'reason': reason,
             'episode_step': self.episode_step,
             'stable_time': self.stable_time,
-            'max_stable_time': self.max_stable_time
+            'max_stable_time': self.max_stable_time,
+            'pos_error': float(np.linalg.norm(np.array([pose_ned.north_m, pose_ned.east_m]) - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"]]))),
+            'alt_error': float(abs(-pose_ned.down_m - self.goal_pose["z_m"])),
+            'accumulated_huber_error': float(self.accumulated_huber_error),
         }
-        
+
+        for i, var in enumerate(self.action_gains):
+            info[var] = new_gains[var]
+
         return observation, reward, terminated, truncated, info
 
     def get_observation_key_mapping(self):

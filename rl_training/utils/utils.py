@@ -166,20 +166,19 @@ def validate_config(config, model):
 
 
 def demonstrate_observation_action_format(env):
-    """Demonstrate the new observation and action format."""
     
-    print(f"\n🔍 Demonstrating Observation and Action Format")
+    print("\n🔍 Demonstrating Observation and Action Format")
     print("=" * 60)
     
     # Show sample observations and actions
     sample_obs = env.observation_space.sample()
     sample_action = env.action_space.sample()
     
-    print(f"📊 Sample Observation (Array):")
+    print("📊 Sample Observation (Array):")
     print(f"   Shape: {sample_obs.shape}")
     print(f"   Values: {sample_obs}")
     
-    print(f"\n🎯 Sample Action (Array):")
+    print("\n🎯 Sample Action (Array):")
     print(f"   Shape: {sample_action.shape}")
     print(f"   Values: {sample_action}")
     
@@ -187,11 +186,11 @@ def demonstrate_observation_action_format(env):
     obs_mapping = env.get_observation_key_mapping()
     action_mapping = env.get_action_key_mapping()
     
-    print(f"\n🗺️  Observation Index Meaning:")
+    print("\n🗺️  Observation Index Meaning:")
     for key, idx in obs_mapping.items():
         print(f"   obs[{idx}] = {key} = {sample_obs[idx]:.3f}")
     
-    print(f"\n🎯 Action Index Meaning:")
+    print("\n🎯 Action Index Meaning:")
     for key, idx in action_mapping.items():
         print(f"   action[{idx}] = {key} adjustment = {sample_action[idx]:.3f}")
 
@@ -249,7 +248,7 @@ def evaluate_agent(model, env, num_episodes=None):
     std_reward = np.std(episode_rewards)
     avg_length = np.mean(episode_lengths)
     
-    print(f"\n📊 Evaluation Results:")
+    print("\n📊 Evaluation Results:")
     print(f"   Average reward: {avg_reward:.2f} ± {std_reward:.2f}")
     print(f"   Average episode length: {avg_length:.1f} steps")
     print(f"   Success rate: {sum(1 for r in episode_rewards if r > 0) / len(episode_rewards):.1%}")
@@ -261,3 +260,88 @@ def evaluate_agent(model, env, num_episodes=None):
         'std_reward': std_reward,
         'avg_length': avg_length
     }
+
+# --------------------
+# Run directory helpers
+# --------------------
+import datetime
+import json
+import subprocess
+
+
+def _safe_mkdir(path: str) -> str:
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def create_run_dir(base_dir: str, algo: str, env_id: str, exp_name: str | None = None) -> dict:
+    """
+    Create a structured run directory tree:
+    runs/<algo>/<env_id>/<YYYYMMDD_HHMMSS>_{exp_name}/ with subdirs tb/ and models/
+
+    Returns a dict with paths.
+    """
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    suffix = f"_{exp_name}" if exp_name else ""
+    run_dir = os.path.join(base_dir, algo, env_id, f"{stamp}{suffix}")
+    tb_dir = os.path.join(run_dir, "tb")
+    models_dir = os.path.join(run_dir, "models")
+
+    _safe_mkdir(tb_dir)
+    _safe_mkdir(models_dir)
+
+    return {
+        'run_dir': run_dir,
+        'tb_dir': tb_dir,
+        'models_dir': models_dir,
+        'cfg_path': os.path.join(run_dir, 'cfg.yaml'),
+        'git_path': os.path.join(run_dir, 'git.txt'),
+        'metrics_path': os.path.join(run_dir, 'metrics.json'),
+    }
+
+
+essential_config_keys = [
+    'environment_config', 'ardupilot_config', 'gazebo_config', 'ddpg_params', 'training_config',
+    'evaluation_config', 'callbacks',
+]
+
+
+def save_config_copy(config: dict, cfg_path: str) -> None:
+    """Save a trimmed copy of the config to cfg.yaml in the run dir."""
+    try:
+        # Preserve only essential top-level keys if present
+        trimmed = {k: config.get(k) for k in essential_config_keys if k in config}
+        with open(cfg_path, 'w') as f:
+            yaml.safe_dump(trimmed if trimmed else config, f, sort_keys=False)
+    except Exception as exc:
+        print(f"⚠️ Could not write config copy to {cfg_path}: {exc}")
+
+
+def save_git_info(git_path: str) -> None:
+    """Write current git commit, branch, and dirty flag to git.txt if inside a git repo."""
+    try:
+        # Determine if repo
+        subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        commit = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
+        branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).decode().strip()
+        status = subprocess.check_output(["git", "status", "--porcelain"]).decode()
+        dirty = "dirty" if status.strip() else "clean"
+        with open(git_path, 'w') as f:
+            f.write(f"commit: {commit}\n")
+            f.write(f"branch: {branch}\n")
+            f.write(f"state: {dirty}\n")
+    except Exception as exc:
+        try:
+            with open(git_path, 'w') as f:
+                f.write(f"git: unavailable ({exc})\n")
+        except Exception as exc2:
+            print(f"⚠️ Could not write git info to {git_path}: {exc2}")
+
+
+def save_metrics_json(metrics: dict, metrics_path: str) -> None:
+    """Save final evaluation summary as JSON."""
+    try:
+        with open(metrics_path, 'w') as f:
+            json.dump(metrics, f, indent=2)
+    except Exception as exc:
+        print(f"⚠️ Could not write metrics to {metrics_path}: {exc}")
