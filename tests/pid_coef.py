@@ -7,12 +7,12 @@ os.environ.setdefault("MAVLINK_DIALECT", "ardupilotmega")
 CONN_STR = "udp:127.0.0.1:14551"
 
 # MAVLink message IDs
-PID_TUNING = 194
-NAV_CONTROLLER_OUTPUT = 62
-LOCAL_POSITION_NED = 32
+# PID_TUNING = 194
+# NAV_CONTROLLER_OUTPUT = 62
+# LOCAL_POSITION_NED = 32
 
-RATE_PID_HZ = 20
-RATE_DBG_HZ = 20
+# RATE_PID_HZ = 20
+# RATE_DBG_HZ = 20
 
 # Enable AccZ (bit 5) plus others if you want
 GCS_PID_MASK_VALUE = 0xFFFF  # 32=AccZ only; keep 0xFFFF if you really want all
@@ -54,42 +54,45 @@ def main():
     wait_heartbeat(master)
 
     # Ensure AccZ PID_TUNING is enabled
-    set_param_and_confirm(master, "GCS_PID_MASK", GCS_PID_MASK_VALUE)
+    # set_param_and_confirm(master, "GCS_PID_MASK", GCS_PID_MASK_VALUE)
 
     # Ask for streams
-    set_message_interval(master, PID_TUNING, RATE_PID_HZ)  # PID_TUNING (AccZ)
+    # set_message_interval(master, PID_TUNING, RATE_PID_HZ)  # PID_TUNING (AccZ)
+    # set_message_interval(master, NAV_CONTROLLER_OUTPUT, RATE_PID_HZ)  # alt_error
 
     print("\nStreaming altitude-related data… (Ctrl+C to stop)")
+    # print(master.messages)
     while True:
-        msg = master.recv_match(blocking=True, timeout=1.0)
-        if not msg:
-            continue
+        try:
+            print(master.messages["NAV_CONTROLLER_OUTPUT"])
+            print(master.messages["PID_TUNING[4]"])
+            print(master.messages["DEBUG_VECT"])
+        except:
+            pass
+        # accZ_err = None
+    # vZ_err = None
+    # alt_err = None
+    # trials = 0
+    # print("scsdc")
+    # while (alt_err is None) or (vZ_err is None) or (accZ_err is None):
+    #     trials += 1
+    #     print("enter")
+    #     try:
+    #         vZ_err = master.messages["DEBUG_VECT"].z
+    #         alt_err = master.messages["NAV_CONTROLLER_OUTPUT"].alt_error
+    #         accZ_err = master.messages["PID_TUNING[4]"].desired - master.messages["PID_TUNING[4]"].achieved 
 
-        t = msg.get_type()
-
-        # --- Inner accel-Z loop from PID_TUNING ---
-        if t == "PID_TUNING":
-            axis = getattr(msg, "axis", None)
-            # Keep only AccZ (exclude roll/pitch/yaw axes = 1/2/3)
-            if axis in (1, 2, 3):
-                continue
-            desired = float(getattr(msg, "desired", float("nan")))   # m/s^2 (+down)
-            achieved = float(getattr(msg, "achieved", float("nan"))) # m/s^2 (+down)
-            err = desired - achieved
-            print(f"[ACCZ] des_acc={desired:8.3f}  ach_acc={achieved:8.3f}  err={err:8.3f}")
-
-        # --- Your custom velocity-Z debug (DEBUG_VECT "VELZPID") ---
-        elif t == "DEBUG_VECT":
-            # name is bytes in pymavlink
-            name = msg.name.decode('ascii', 'ignore') if isinstance(msg.name, (bytes, bytearray)) else str(msg.name)
-            if name == "VELZPID":
-                vz_sp_up   = float(msg.x)  # you send target in x
-                vz_meas_up = float(msg.y)  # you send actual in y
-                vz_error = float(msg.z)  # you send error
-
-
-                # Try to infer what 'third' is: if close to (sp - meas), call it err; else print both.
-                print(f"[VELZ] vz_sp={vz_sp_up:7.3f}  vz={vz_meas_up:7.3f}  err={vz_error:7.3f} ")
-
+    #         print(vZ_err)
+    #         print(alt_err)
+    #         print(accZ_err)
+    #     except:
+    #         print("Exception")
+    #         if trials > 3:
+    #             break
+    # print("received")
+    # print(accZ_err)
+    # print(vZ_err)
+    # print(alt_err)
+    
 if __name__ == "__main__":
     main()

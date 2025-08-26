@@ -121,11 +121,18 @@ class ArduPilotSITL:
 
         try:
             self._set_mode_sync('GUIDED')
-            PID_TUNING = 194
-            RATE_PID_HZ = 20    # TODO 
-            self.set_message_interval(PID_TUNING, RATE_PID_HZ)
-            GCS_PID_MASK_VALUE = 0xFFFF
-            self.set_param_and_confirm("GCS_PID_MASK", GCS_PID_MASK_VALUE)
+            
+            # # channels
+            # PID_TUNING = 194
+            # NAV_CONTROLLER_OUTPUT = 62
+
+            # RATE_HZ = 20    # TODO 
+            # # self.set_message_interval(PID_TUNING, RATE_HZ)
+            # # self.set_message_interval(NAV_CONTROLLER_OUTPUT, RATE_HZ)
+
+            # GCS_PID_MASK_VALUE = 0xFFFF
+            # self.set_param_and_confirm("GCS_PID_MASK", GCS_PID_MASK_VALUE)
+            # print("All set up successfully")
         except Exception as e:
             logger.warning(f"Error setting GUIDED mode after startup: {e}")
 
@@ -133,8 +140,8 @@ class ArduPilotSITL:
 
         logger.debug("SITL started successfully.")
 
-    def set_message_interval(self, msg_id, hz):
-        master = self._get_mavlink_connection()
+    def set_message_interval(self, master, msg_id, hz):
+        # master = self._get_mavlink_connection()
         interval_us = int(1e6 / hz)
         master.mav.command_long_send(
             master.target_system, master.target_component,
@@ -142,8 +149,8 @@ class ArduPilotSITL:
             float(msg_id), float(interval_us), 0, 0, 0, 0, 0)
         master.recv_match(type="COMMAND_ACK", blocking=False, timeout=0.5)      
 
-    def set_param_and_confirm(self, name_str, value, timeout=3.0):
-        master = self._get_mavlink_connection()
+    def set_param_and_confirm(self, master, name_str, value, timeout=3.0):
+        # master = self._get_mavlink_connection()
         name_bytes = name_str.encode("ascii", "ignore")
         master.mav.param_set_send(master.target_system, master.target_component,
                             name_bytes, float(value),
@@ -419,8 +426,8 @@ class ArduPilotSITL:
 
 
         if self.master_port is not None and self.mavsdk_port is not None:
-            # cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port} --out udp:127.0.0.1:{self.mavsdk_port}')
-            cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port}')
+            cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port} --out udp:127.0.0.1:{self.mavsdk_port}')
+            # cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port}')
         else:
             cmd.append(f'--mavproxy-args={self.mavproxy_args}')
 
@@ -557,8 +564,26 @@ class ArduPilotSITL:
             addr = f'udp:127.0.0.1:{self.master_port}'
             
             try:
+                print("new connection")
                 self._mavlink_master = mavutil.mavlink_connection(addr)
-                self._mavlink_master.wait_heartbeat(timeout=10.0)
+                hb = self._mavlink_master.wait_heartbeat()
+                self._mavlink_master.target_system = hb.get_srcSystem()
+
+                self._mavlink_master.target_component = hb.get_srcComponent() or mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
+                logger.debug(f"HB from sys:{self._mavlink_master.target_system} comp:{self._mavlink_master.target_component}")
+
+                # channels
+                PID_TUNING = 194
+                NAV_CONTROLLER_OUTPUT = 62
+
+                RATE_HZ = 20    # TODO 
+                self.set_message_interval(self._mavlink_master, PID_TUNING, RATE_HZ)
+                self.set_message_interval(self._mavlink_master, NAV_CONTROLLER_OUTPUT, RATE_HZ)
+
+                GCS_PID_MASK_VALUE = 0xFFFF
+                self.set_param_and_confirm(self._mavlink_master, "GCS_PID_MASK", GCS_PID_MASK_VALUE)
+
+                print(f"Established MAVLink connection to {addr}")
                 logger.debug(f"Established MAVLink connection to {addr}")
             except Exception as e:
                 self._mavlink_master = None

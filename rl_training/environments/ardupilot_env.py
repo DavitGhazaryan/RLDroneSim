@@ -227,41 +227,16 @@ class ArdupilotEnv(gym.Env):
             observation[idx] = state_value
         
         master = self.sitl._get_mavlink_connection()
-        acc_received = False
-        vel_received = False
+        print("Waiting for heartbeat...")
+        hb = master.wait_heartbeat()
 
-        accZ_des = None
-        accZ_act = None
-        accZ_err = None
-        vZ_des = None
-        vZ_act = None
-        vZ_err = None
+        try:
+            print(master.messages["NAV_CONTROLLER_OUTPUT"])
+            print(master.messages["PID_TUNING[4]"])
+            print(master.messages["DEBUG_VECT"])
+        except:
+            pass
 
-        while (not acc_received) or (not vel_received):
-            print("inner")
-            msg = master.recv_match(blocking=True, timeout=5.0)
-            if not msg:
-                continue
-            t = msg.get_type()
-            if t == "PID_TUNING":
-                if msg.axis not in (1, 2, 3):  # AccZ only
-                    print("Other message received")
-                    accZ_des = float(msg.desired)
-                    accZ_act = float(msg.achieved)
-                    accZ_err = accZ_des - accZ_act
-                    acc_received = True
-
-            elif t == "DEBUG_VECT":
-                name = msg.name.decode("ascii", "ignore") if isinstance(msg.name, (bytes, bytearray)) else str(msg.name)
-                if name == "VELZPID":
-                    print("Message received")
-                    vZ_des = float(msg.x)
-                    vZ_act = float(msg.y)
-                    vZ_err = float(msg.z)
-                    vel_received = True
-
-        print(f"[ACCZ] acc_des={accZ_des:.3f}  acc_act={accZ_act:.3f}  acc_err={accZ_err:.3f}")
-        print(f"[VELZ] vz_des={vZ_des:.3f}  vz_act={vZ_act:.3f}  vz_err={vZ_err:.3f}")
 
         info = {}
         return observation, info 
