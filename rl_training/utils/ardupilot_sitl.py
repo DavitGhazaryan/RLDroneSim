@@ -81,6 +81,7 @@ class ArduPilotSITL:
         self.mavsdk_port       = config.get('mavsdk_port')  # Configurable MAVSDK port
         self.port_check_timeout = config.get('port_check_timeout')  # Timeout for port availability
 
+
         # parse home location
         if self.location_str:
             parts = [float(x) for x in self.location_str.split(',')]
@@ -120,9 +121,45 @@ class ArduPilotSITL:
 
         try:
             self._set_mode_sync('GUIDED')
+            PID_TUNING = 194
+            RATE_PID_HZ = 20    # TODO 
+            self.set_message_interval(PID_TUNING, RATE_PID_HZ)
+            GCS_PID_MASK_VALUE = 0xFFFF
+            self.set_param_and_confirm("GCS_PID_MASK", GCS_PID_MASK_VALUE)
         except Exception as e:
             logger.warning(f"Error setting GUIDED mode after startup: {e}")
+
+
+
         logger.debug("SITL started successfully.")
+
+    def set_message_interval(self, msg_id, hz):
+        master = self._get_mavlink_connection()
+        interval_us = int(1e6 / hz)
+        master.mav.command_long_send(
+            master.target_system, master.target_component,
+            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
+            float(msg_id), float(interval_us), 0, 0, 0, 0, 0)
+        master.recv_match(type="COMMAND_ACK", blocking=False, timeout=0.5)      
+
+    def set_param_and_confirm(self, name_str, value, timeout=3.0):
+        master = self._get_mavlink_connection()
+        name_bytes = name_str.encode("ascii", "ignore")
+        master.mav.param_set_send(master.target_system, master.target_component,
+                            name_bytes, float(value),
+                            mavutil.mavlink.MAV_PARAM_TYPE_INT32)
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            msg = master.recv_match(type="PARAM_VALUE", blocking=True, timeout=timeout)
+            if not msg:
+                break
+            pid = msg.param_id.decode("ascii","ignore").rstrip("\x00") if isinstance(msg.param_id,(bytes,bytearray)) else str(msg.param_id).rstrip("\x00")
+            if pid == name_str:
+                print(f"PARAM {name_str} => {int(msg.param_value)} (ack)")
+                return True
+        print(f"WARN: no PARAM_VALUE ack for {name_str}")
+        return False
+
 
     # Mode Setting
     def _set_mode_sync(self, mode_name: str, timeout: float = 10.0) -> bool:
@@ -187,9 +224,6 @@ class ArduPilotSITL:
         # trigger
         await drone.param.set_param_float("SCR_USER1", 1)
 
-
-        
-
     async def set_param_async(self, param_name: str, value: float):
         drone = await self._get_mavsdk_connection()
         await drone.param.set_param_float(param_name, value)
@@ -197,8 +231,6 @@ class ArduPilotSITL:
     async def get_param_async(self, param_name: str):
         drone = await self._get_mavsdk_connection()
         return await drone.param.get_param_float(param_name)
-
-    
 
     # Pose Getting
     async def get_pose_gps_async(self):
@@ -391,7 +423,7 @@ class ArduPilotSITL:
             cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port}')
         else:
             cmd.append(f'--mavproxy-args={self.mavproxy_args}')
-            print(cmd)
+
         return cmd
 
     def _start_log_threads(self):
