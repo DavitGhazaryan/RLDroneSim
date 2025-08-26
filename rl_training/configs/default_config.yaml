@@ -8,29 +8,27 @@
 
 environment_config:
   max_episode_steps: 20          
-  mode: "altitude"               # Flight mode: position, attitude, stabilize, althold, altitude
+  mode: "altitude"               # Flight mode: position, attitude, stabilize, altitude
   observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"  # Which PID gains to observe
   observable_states: "altitude_m" # Which states to observe
   action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"      # Which PID gains to adjust
-  reward_function: "error"       
+  reward_config: "error"       
   action_dt: 0.1                 # Time interval between action and observation
   takeoff_altitude: 5.0          #  meters
+  verbose: false                 # controls custom logging not internal
   # normalize_observations: true   # Whether to normalize observations
   # normalize_actions: false       # Whether to normalize actions
 
 
 ardupilot_config:
   ardupilot_path: "/home/pid_rl/ardupilot"    # Path to ArduPilot directory
-  vehicle: "ArduCopter"                        # Vehicle type: copter, plane, rover
   frame: "gazebo-iris"                         # Vehicle model for Gazebo
   name: "iris_with_ardupilot"                  # Vehicle name
   ideal_sensors: true                           # Use ideal sensor models
-  
-  # Optional parameters (set to null to use defaults)
-  instance: 0                                   # Instance number for multiple vehicles
-  count: null                                   # Number of vehicle instances
-  location: null                                # Home location: [lat, lon, alt, yaw]
-  speedup: 5                                    # Simulation speed multiplier
+  instance: 0                                  # Instance number for multiple vehicles
+  count: null                                  # Number of vehicle instances
+  location: null                               # Home location: [lat, lon, alt, yaw]
+  speedup: 10                                  # Simulation speed multiplier
   wipe_eeprom: true                            # Clear EEPROM on startup
   use_dir: null                                # Custom directory for SITL
   delay_start: null                            # Startup delay in seconds
@@ -52,16 +50,15 @@ ardupilot_config:
 # Gazebo configuration
 # control the wind from the sdf file directly
 gazebo_config:
-  sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  # World file path
-  gui: true                                          # Show Gazebo GUI
-  timeout: 10.0                                # Gazebo startup timeout
-  verbose: false                               # Verbose output
+  sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  
+  gui: true                                         
+  verbose: false          # enables -v 4; internal logging of gz            
 
 training_config:
-  total_timesteps: 200                        # Total training timesteps
-  eval_freq: 5                               # Evaluation frequency
-  save_freq: 5                               # Model saving frequency
-  log_freq: 10                                # Logging frequency
+  total_timesteps: 1000000                        # Total training timesteps
+  eval_freq: 1000                               # Evaluation frequency
+  save_freq: 1000                            # Model saving frequency
+  log_freq: 50                                # Logging frequency
   runs_base: "/home/pid_rl/rl_training/runs"            # Base directory for all runs
   algo: "ddpg"                                # Algorithm name for run dir
   mission: "hover"                                
@@ -74,9 +71,9 @@ training_config:
 # Core hyperparameters for the DDPG algorithm
 ddpg_params:
   learning_rate: 0.001                          # Learning rate for actor and critic networks
-  buffer_size: 100000                          # Size of replay buffer
-  learning_starts: 10                          # Steps before learning begins
-  batch_size: 64                               # Batch size for training
+  buffer_size: 1000000                          # Size of replay buffer
+  learning_starts: 10000                          # Steps before learning begins
+  batch_size: 1024                               # Batch size for training
   tau: 0.005                                   # Soft update coefficient for target networks
   gamma: 0.99                                  # Discount factor for future rewards
   train_freq: 1                                # Training frequency (every N steps)
@@ -88,10 +85,9 @@ ddpg_params:
   target_policy_noise: 0.2                     # Target policy noise (for TD3-like behavior)
   target_noise_clip: 0.5                       # Target noise clipping
   verbose: 1                                   # Verbosity level
-  tensorboard_log: "./logs/ddpg_ardupilot/"    # TensorBoard log directory
   policy_kwargs: null                          # Additional policy arguments
   seed: null                                   # Random seed (null for random)
-  device: "auto"                               # Device for training (auto, cpu, cuda)
+  device: "cuda"                               # Device for training (auto, cpu, cuda)
   _init_setup_model: true                      # Initialize model setup
 
 
@@ -99,16 +95,15 @@ ddpg_params:
 # Callbacks for logging, checkpointing, and evaluation during training
 callbacks:
   - type: "checkpoint"                         # Checkpoint callback type
-    save_freq: 5                             # Save frequency for checkpoints
+    save_freq: 1000                             # Save frequency for checkpoints
     name_prefix: "ddpg_ardupilot"              # Checkpoint name prefix
 
 # Evaluation configuration
-# Settings for evaluating trained models
 evaluation_config:
-  n_eval_episodes: 2                           # Number of evaluation episodes
+  n_eval_episodes: 1                           # Number of evaluation episodes
   deterministic: true                           # Use deterministic actions
   save_results: true                            # Save evaluation results
-  plot_results: true                            # Plot evaluation results
+  plot_results: false                            # Plot evaluation results
 
 # Reward function configuration
 # Parameters for different reward function types

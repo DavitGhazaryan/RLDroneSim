@@ -11,12 +11,17 @@ import threading
 
 
 logger = logging.getLogger("GazeboInterface")
-logger.setLevel(logging.INFO)  # Default level; can be overridden in your experiment runner
+# logger.setLevel(logging.INFO)  # Default level; can be overridden in your experiment runner
 
 
 class GazeboInterface:
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], verbose):
+        if verbose:
+            logger.setLevel(logging.INFO) 
+        else:
+            logger.setLevel(logging.ERROR)
+
         self.config = config
         self.process = None
         self.is_started = False
@@ -29,9 +34,7 @@ class GazeboInterface:
             raise FileNotFoundError(f"SDF file not found: {self.sdf_file}")
         
         self.gui = config.get('gui')
-        self.verbose = config.get('verbose')
-        self.extra_args = config.get('extra_args', [])
-        self.timeout = config.get('timeout')
+        self.int_verbose = config.get('verbose')    
         
         # for time synchronization 
         self.sim_time = 0.0
@@ -48,10 +51,8 @@ class GazeboInterface:
             cmd.append('-s')
         if self.sdf_file:
             cmd.append(self.sdf_file)
-        if self.verbose:
+        if self.int_verbose:
             cmd.append('-v 4')
-        if self.extra_args:
-            cmd.extend(self.extra_args)
         
         logger.debug(f"Command: {' '.join(cmd)}")
         
@@ -214,7 +215,7 @@ class GazeboInterface:
         logger.debug("Waiting for Gazebo to initialize...")
         start_time = time.time()
 
-        while time.time() - start_time < self.timeout:
+        while time.time() - start_time < 10:    # timeout = 10
             if self.process.poll() is not None:
                 stdout, stderr = self.process.communicate()
                 raise RuntimeError(f"Gazebo failed to start. Error: {stderr.decode()}")
@@ -228,4 +229,4 @@ class GazeboInterface:
             time.sleep(1)
 
         self.close()
-        raise RuntimeError(f"Gazebo startup timeout after {self.timeout} seconds")
+        raise RuntimeError(f"Gazebo startup timeout after {10} seconds")

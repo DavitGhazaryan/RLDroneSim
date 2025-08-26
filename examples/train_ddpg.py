@@ -133,15 +133,13 @@ def main():
         import os
 
         config = load_config(config_path)
-
-        if not validate_config(config, "ddpg"):
+        if not validate_config(config, config["training_config"]["algo"]):
             print("❌ Configuration validation failed. Please check your config file.")
             return
         
         print("🔧 Creating  ArdupilotEnv...")
         
         env = ArdupilotEnv(config)
-        # demonstrate_observation_action_format(env)
         
         # Prepare run directory structure
         training_config = config.get('training_config', {})

@@ -19,8 +19,8 @@ from pymavlink import mavutil
 from mavsdk import System
 
 
+
 logger = logging.getLogger("SITL")  
-logging.basicConfig(level=logging.INFO)
 
 class ArduPilotSITL:
     """
@@ -34,7 +34,12 @@ class ArduPilotSITL:
 
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], verbose=True):
+        if verbose:
+            logging.basicConfig(level=logging.INFO)
+        else:
+            logging.basicConfig(level=logging.ERROR)
+
         self.config = config
         self.process: Optional[subprocess.Popen] = None
         self.child_processes: List[int] = []
@@ -48,8 +53,8 @@ class ArduPilotSITL:
 
         # required
         self.ardupilot_path = Path(config['ardupilot_path'])
-        self.vehicle         = config.get('vehicle', 'ArduCopter')
-        self.frame           = config.get('frame',   'quad')
+        self.vehicle         = 'ArduCopter'
+        self.frame           = config.get('frame')
         self.ideal_sensors   = config.get('ideal_sensors')
         # optional
         self.name             = config.get('name')
@@ -386,6 +391,7 @@ class ArduPilotSITL:
             cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port}')
         else:
             cmd.append(f'--mavproxy-args={self.mavproxy_args}')
+            print(cmd)
         return cmd
 
     def _start_log_threads(self):
