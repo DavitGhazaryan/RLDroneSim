@@ -10,10 +10,10 @@ environment_config:
   max_episode_steps: 20          
   mode: "altitude"               # Flight mode: position, attitude, stabilize, altitude
   observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"  # Which PID gains to observe
-  observable_states: "altitude_m" # Which states to observe
+  observable_states: "alt_err+vZ_err+accZ_err" # Which states to observe
   action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"      # Which PID gains to adjust
   reward_config: "error"       
-  action_dt: 0.0001                 # Time interval between action and observation
+  action_dt: 0.1                 # Time interval between action and observation
   takeoff_altitude: 5.0          #  meters
   verbose: false                 # controls custom logging not internal
   # normalize_observations: true   # Whether to normalize observations

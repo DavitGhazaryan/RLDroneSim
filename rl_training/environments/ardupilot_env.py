@@ -210,31 +210,36 @@ class ArdupilotEnv(gym.Env):
             observation[i] = gain_value
         
         # Fill states
-        pose_ned = (await anext(drone.telemetry.position_velocity_ned())).position
-        
+        master = self.sitl._get_mavlink_connection()
+        print("Waiting for heartbeat...")
+        hb = master.wait_heartbeat()
         for i, observable_state in enumerate(self.observable_states):
             idx = len(self.observable_gains) + i
-            if observable_state == 'altitude_m':
-                state_value = -pose_ned.down_m  # Convert down_m (negative) to relative altitude (positive)
-                
-            elif observable_state == 'x_m':
-                state_value = pose_ned.east_m
-            elif observable_state == 'y_m':
-                state_value = pose_ned.north_m
+            if observable_state == 'alt_err':
+                state_value = master.messages["NAV_CONTROLLER_OUTPUT"].alt_error
+            elif observable_state == 'vZ_err':
+                state_value = master.messages["DEBUG_VECT"].z
+            elif observable_state == 'accZ_err':
+                state_value = master.messages["PID_TUNING[4]"].desired - master.messages["PID_TUNING[4]"].achieved
             else:
                 raise NotImplemented("Observation not available")
                 # For other states, try to get from NED position
             observation[idx] = state_value
         
-        master = self.sitl._get_mavlink_connection()
-        print("Waiting for heartbeat...")
-        hb = master.wait_heartbeat()
-
         try:
-            print(master.messages["NAV_CONTROLLER_OUTPUT"])
-            print(master.messages["PID_TUNING[4]"])
-            print(master.messages["DEBUG_VECT"])
+            import datetime
+
+            t_us = master.messages["DEBUG_VECT"].time_usec       # microseconds
+            t_s  = t_us / 1e6          # seconds (float)
+
+            # As relative time since boot:
+            print(f"since boot: {t_s:.3f} s")
+
+            # If you want to make it a datetime for readability (just anchored to epoch):
+            dt = datetime.datetime.utcfromtimestamp(t_s)
+            print("as datetime (fake epoch):", dt)
         except:
+            print("Exception")
             pass
 
 

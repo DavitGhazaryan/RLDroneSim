@@ -226,7 +226,7 @@ class GazeboInterface:
                     return
             except subprocess.CalledProcessError:
                 pass
-            time.sleep(1)
+            time.sleep(0.1)
 
         self.close()
         raise RuntimeError(f"Gazebo startup timeout after {10} seconds")

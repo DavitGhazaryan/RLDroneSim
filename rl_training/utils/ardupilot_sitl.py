@@ -121,18 +121,6 @@ class ArduPilotSITL:
 
         try:
             self._set_mode_sync('GUIDED')
-            
-            # # channels
-            # PID_TUNING = 194
-            # NAV_CONTROLLER_OUTPUT = 62
-
-            # RATE_HZ = 20    # TODO 
-            # # self.set_message_interval(PID_TUNING, RATE_HZ)
-            # # self.set_message_interval(NAV_CONTROLLER_OUTPUT, RATE_HZ)
-
-            # GCS_PID_MASK_VALUE = 0xFFFF
-            # self.set_param_and_confirm("GCS_PID_MASK", GCS_PID_MASK_VALUE)
-            # print("All set up successfully")
         except Exception as e:
             logger.warning(f"Error setting GUIDED mode after startup: {e}")
 
@@ -576,7 +564,7 @@ class ArduPilotSITL:
                 PID_TUNING = 194
                 NAV_CONTROLLER_OUTPUT = 62
 
-                RATE_HZ = 20    # TODO 
+                RATE_HZ = 100    # TODO 
                 self.set_message_interval(self._mavlink_master, PID_TUNING, RATE_HZ)
                 self.set_message_interval(self._mavlink_master, NAV_CONTROLLER_OUTPUT, RATE_HZ)
 
