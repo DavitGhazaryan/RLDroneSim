@@ -32,6 +32,8 @@ class ArdupilotEnv(gym.Env):
         self.observable_states = self.config['observable_states'].split('+')
         self.action_gains = self.config['action_gains'].split('+')
         self.reward_config = self.config["reward_config"]
+        self.reward_coefs = config.get('reward_config').get(self.reward_config)
+
         self.action_dt = self.config.get('action_dt')
         self.takeoff_altitude = self.config['takeoff_altitude']
 
@@ -192,12 +194,13 @@ class ArdupilotEnv(gym.Env):
         observation, info = self.loop.run_until_complete(self._async_get_observation())
         return observation, info  # observation, info
 
-    async def _async_get_observation(self):
+    async def _async_get_observation(self, messages=None):
         """
         Get the observations of the environment as a flattened array.
         This function is called when the environment is reset.
         Returns flattened observations for Stable Baselines compatibility.
         """
+
         drone = await self.sitl._get_mavsdk_connection()
 
         # Initialize flattened observation array
@@ -210,42 +213,27 @@ class ArdupilotEnv(gym.Env):
             observation[i] = gain_value
         
         # Fill states
-        master = self.sitl._get_mavlink_connection()
-        print("Waiting for heartbeat...")
-        hb = master.wait_heartbeat()
+        if messages is None:
+            master = self.sitl._get_mavlink_connection()
+            hb = master.wait_heartbeat()
+            messages = master.messages
+
         for i, observable_state in enumerate(self.observable_states):
             idx = len(self.observable_gains) + i
             if observable_state == 'alt_err':
-                state_value = master.messages["NAV_CONTROLLER_OUTPUT"].alt_error
+                state_value = messages["NAV_CONTROLLER_OUTPUT"].alt_error
             elif observable_state == 'vZ_err':
-                state_value = master.messages["DEBUG_VECT"].z
+                state_value = messages["DEBUG_VECT"].z
             elif observable_state == 'accZ_err':
-                state_value = master.messages["PID_TUNING[4]"].desired - master.messages["PID_TUNING[4]"].achieved
+                state_value = messages["PID_TUNING[4]"].desired - messages["PID_TUNING[4]"].achieved
             else:
                 raise NotImplemented("Observation not available")
                 # For other states, try to get from NED position
             observation[idx] = state_value
-        
-        try:
-            import datetime
-
-            t_us = master.messages["DEBUG_VECT"].time_usec       # microseconds
-            t_s  = t_us / 1e6          # seconds (float)
-
-            # As relative time since boot:
-            print(f"since boot: {t_s:.3f} s")
-
-            # If you want to make it a datetime for readability (just anchored to epoch):
-            dt = datetime.datetime.utcfromtimestamp(t_s)
-            print("as datetime (fake epoch):", dt)
-        except:
-            print("Exception")
-            pass
-
 
         info = {}
         return observation, info 
-    
+
     def _setup_mission(self):
         match self.mode:
             case 'altitude':
@@ -271,7 +259,7 @@ class ArdupilotEnv(gym.Env):
         return {
             'x_m': self.goal_pose['x_m'],
             'y_m': self.goal_pose['y_m'],    
-            'z_m': max(self.goal_pose['z_m'], 0.3) + self.np_random.uniform(-2.0, 2.0)
+            'z_m': max(self.goal_pose['z_m']+ self.np_random.uniform(-2.0, 2.0), 0.3) 
         }, self.ep_initial_attitude, initial_gains
     
     def step(self, action):
@@ -286,7 +274,7 @@ class ArdupilotEnv(gym.Env):
         Actions are changes to PID parameters that need to be applied.
         """
         drone = await self.sitl._get_mavsdk_connection()
-        # Validate action dimensions
+
         if len(action) != len(self.action_gains):
             raise ValueError(f"Expected action of length {len(self.action_gains)}, got {len(action)}")
         
@@ -295,72 +283,29 @@ class ArdupilotEnv(gym.Env):
         for variable in self.action_gains:
             new_gains[variable] = await drone.param.get_param_float(variable)
         
-        # Apply the flattened action to the gains
         for i, var in enumerate(self.action_gains):
             new_gains[var] += action[i]
             new_gains[var] = max(new_gains[var], 0)
             await drone.param.set_param_float(var, new_gains[var])
         
-        # print(f"SENDING {new_gains}")
 
         await self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
 
-        # get the new observation
-        observation, info = await self._async_get_observation()
-        # print(observation)
+        # first get more complete info then construct observation from that        
+        master = self.sitl._get_mavlink_connection()
+        master.wait_heartbeat()
+        messages = master.messages
+        observation, info = await self._async_get_observation(messages)
+        
+        ## TODO  remove mavsdk part
         pose_vel = await anext(drone.telemetry.position_velocity_ned())
         pose_ned = pose_vel.position
         attitude = await anext(drone.telemetry.attitude_euler())
+                
+
+
+        terminated, reason = self._check_terminated(messages, pose_vel, attitude)
         
-
-        def _check_terminated(pose_vel, attitude):
-            pose = pose_vel.position
-            vel = pose_vel.velocity
-            # Assume pose : [north_m:, east_m:, down_m:] object
-            #             attitude: [pitch_deg:, roll_deg:, yaw_deg:]
-            
-            # 1. Crash: the difference between current and target attitude is more that 30 degree
-            if abs(attitude.pitch_deg - self.goal_orientation['pitch_deg']) > 15 or abs(attitude.roll_deg - self.goal_orientation['roll_deg']) > 15:
-                return True, "crash: excessive pitch/roll"
-
-            # Velocity checks
-            if abs(vel.north_m_s) > 3 or abs(vel.east_m_s) > 3 or abs(vel.down_m_s) > 3:
-                return True, "vel exceeds limits"
-            
-
-            # 2. Flip (pitch or roll > 90 deg)
-            if abs(attitude.pitch_deg) > 90 or abs(attitude.roll_deg) > 90:
-                return True, "crash: flip"
-
-            # 3. 2x farther from goal than originally
-            dist_init = np.linalg.norm(np.array([self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]]) 
-                                       - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
-            dist_now = np.linalg.norm(np.array([pose.north_m, pose.east_m, -pose.down_m]) 
-                                      - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
-            
-            if dist_now > 4.0 * dist_init and dist_now > 0.01:
-                return True, "too far from goal"
-            
-            # 4. goal is reached - check both position and altitude
-            pos_error = np.linalg.norm(np.array([pose.north_m, pose.east_m]) - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"]]))
-            alt_error = abs(- pose.down_m - self.goal_pose["z_m"])
-            
-            # Check if in vicinity using helper method
-            in_vicinity = self._check_vicinity_status(pos_error, alt_error)
-            
-            # Update stable time tracking (consolidated logic)
-            if in_vicinity:
-                self.eps_stable_time += 1
-                if self.eps_stable_time >= self.max_episode_steps/2:
-                    return True, f"stable for {self.eps_stable_time} steps"
-            else:
-                if self.eps_stable_time > self.max_stable_time:
-                    self.max_stable_time = self.eps_stable_time
-                self.eps_stable_time = 0
-            return False, None
-
-        terminated, reason = _check_terminated(pose_vel, attitude)
-
         if terminated:
             truncated = False
             logger.info(f"Terminating the episode {reason}")
@@ -369,7 +314,8 @@ class ArdupilotEnv(gym.Env):
             truncated = self.episode_step >= self.max_episode_steps
             if truncated:
                 logger.info(f"Truncating the Episode")
-        reward = self._compute_reward(pose_ned, attitude)
+
+        reward = self._compute_reward(messages, pose_vel, attitude)
         
         # Create proper info dictionary
         info = {
@@ -438,7 +384,7 @@ class ArdupilotEnv(gym.Env):
         drone = await self.sitl._get_mavsdk_connection()
         await drone.action.set_takeoff_altitude(self.takeoff_altitude)
         await drone.action.takeoff()
-        await asyncio.sleep(15/self.sitl.speedup)
+        await asyncio.sleep(30/self.sitl.speedup)
 
     async def _gazebo_sleep(self, duration):
         """
@@ -463,8 +409,53 @@ class ArdupilotEnv(gym.Env):
         in_vicinity = (pos_error <= eps_in and alt_error <= eps_in) if prev_in_vicinity else (pos_error <= eps_out and alt_error <= eps_out)
         
         return in_vicinity
-    
-    def _compute_reward(self, pose, attitude=None):
+
+    def _check_terminated(self, messages, pose_vel, attitude):
+        pose = pose_vel.position
+        vel = pose_vel.velocity
+        # Assume pose : [north_m:, east_m:, down_m:] object
+        #             attitude: [pitch_deg:, roll_deg:, yaw_deg:]
+        
+        # 1. Crash: the difference between current and target attitude is more that 30 degree
+        if abs(attitude.pitch_deg - self.goal_orientation['pitch_deg']) > 15 or abs(attitude.roll_deg - self.goal_orientation['roll_deg']) > 15:
+            return True, "crash: excessive pitch/roll"
+        
+        # Velocity checks
+        if abs(vel.north_m_s) > 3 or abs(vel.east_m_s) > 3 or abs(vel.down_m_s) > 3:
+            return True, "vel exceeds limits"
+        
+        # 2. Flip (pitch or roll > 90 deg)
+        if abs(attitude.pitch_deg) > 90 or abs(attitude.roll_deg) > 90:
+            return True, "crash: flip"
+        # 3. 2x farther from goal than originally
+        dist_init = np.linalg.norm(np.array([self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]]) 
+                                   - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
+        dist_now = np.linalg.norm(np.array([pose.north_m, pose.east_m, -pose.down_m]) 
+                                  - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
+        
+        if dist_now > 2.0 * dist_init and dist_now > 0.1:
+            return True, "too far from goal"
+        
+        # 4. goal is reached - check both position and altitude
+        pos_error = np.linalg.norm(np.array([pose.north_m, pose.east_m]) - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"]]))
+        alt_error = abs(- pose.down_m - self.goal_pose["z_m"])
+        
+        # Check if in vicinity using helper method
+        in_vicinity = self._check_vicinity_status(pos_error, alt_error)
+        
+        # Update stable time tracking (consolidated logic)
+        if in_vicinity:
+            self.eps_stable_time += 1
+            if self.eps_stable_time >= self.max_episode_steps/2:
+                return True, f"stable for {self.eps_stable_time} steps"
+        else:
+            if self.eps_stable_time > self.max_stable_time:
+                self.max_stable_time = self.eps_stable_time
+            self.eps_stable_time = 0
+        return False, None
+
+
+    def _compute_reward(self, messages,  pose_vel, attitude):
         """
         Compute reward based on stable-time mechanism.
         
@@ -475,66 +466,93 @@ class ArdupilotEnv(gym.Env):
         - Timeout reward: κ*max_stable_time - ν*sum_huber_error when timing out
         - Crash penalty: Large negative reward for dangerous attitudes
         """
-        
-        # Calculate position error (2D distance)
-        pos_error = np.linalg.norm(np.array([pose.north_m, pose.east_m]) - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"]]))
-        
-        # Calculate altitude error
-        alt_error = abs(-pose.down_m - self.goal_pose["z_m"])
-        
-        # Use the larger error for the main reward calculation  ????
-        e_t = max(pos_error, alt_error)
-        
-        # Huber function for primary penalty
-        def huber(e, delta):
-            a = abs(e)/delta
-            return 0.5*a*a if a <= 1.0 else a - 0.5
-        
-        # Vicinity parameters (consistent with _check_terminated)
-        delta = 0.05   # Huber parameter (≈ vicinity radius)
-        
-        # Check vicinity status using helper method
-        in_vicinity = self._check_vicinity_status(pos_error, alt_error)
-        
-        # Base reward: primary penalty using Huber
-        r = -huber(e_t, delta)
-        
-        # Accumulate Huber error for timeout reward calculation
-        self.accumulated_huber_error += huber(e_t, delta)
-        
-        # Crash penalty (if attitude is provided)
-        if attitude is not None:
-            # Penalize excessive pitch/roll deviations from goal
-            pitch_error = abs(attitude.pitch_deg - self.goal_orientation['pitch_deg'])
-            roll_error = abs(attitude.roll_deg - self.goal_orientation['roll_deg'])
+        if self.reward_config == "hover":
+            velocity = pose_vel.velocity
+
+            # Calculate position error (2D distance)
+            pos_err = messages["NAV_CONTROLLER_OUTPUT"].wp_dist
             
-            # Large penalty for dangerous attitudes
-            if pitch_error > 30 or roll_error > 20:
-                r -= 50.0  # Severe crash penalty
-            elif pitch_error > 20 or roll_error > 15:
-                r -= 20.0  # Moderate penalty
-            elif pitch_error > 10 or roll_error > 10:
-                r -= 5.0   # Light penalty
+            # Calculate altitude error
+            alt_err = messages["NAV_CONTROLLER_OUTPUT"].alt_error
+
+
+            # Velocity components (magnitude per axis)
+            vel_n = abs(velocity.north_m_s) 
+            vel_e = abs(velocity.east_m_s) 
+            vel_d = abs(velocity.down_m_s) 
+            
+            # Acceleration components if available
+            acc_n = messages["PID_TUNING[1]"].desired - messages["PID_TUNING[1]"].achieved
+            acc_e = messages["PID_TUNING[2]"].desired - messages["PID_TUNING[2]"].achieved
+            acc_yaw = messages["PID_TUNING[3]"].desired - messages["PID_TUNING[3]"].achieved
+            acc_d = messages["PID_TUNING[4]"].desired - messages["PID_TUNING[4]"].achieved
+            
+            # Weighted error aggregation
+            w = self.reward_coefs
+            e_t = (
+                w.get("alt_w", 1.0) * alt_err
+                + w.get("xy_w", 1.0) * pos_err
+                + w.get("velN_w") * vel_n
+                + w.get("velE_w") * vel_e
+                + w.get("velZ_w") * vel_d
+                + w.get("accN_w") * acc_n
+                + w.get("accE_w") * acc_e
+                + w.get("accZ_w") * acc_d
+                + w.get("acc_yaw_w") * acc_yaw
+            )
+            
+            # Huber function for primary penalty
+            def huber(e, delta):
+                a = abs(e)/delta
+                return 0.5*a*a if a <= 1.0 else a - 0.5
+            
+            # Vicinity parameters (consistent with _check_terminated)
+            delta = 0.05   # Huber parameter (≈ vicinity radius)
+            
+            # Check vicinity status using helper method
+            # in_vicinity = self._check_vicinity_status(pos_err, alt_err)
+            
+            # Base reward: primary penalty using Huber
+            r = -huber(e_t, delta)
+            
+            # Accumulate Huber error for timeout reward calculation
+            self.accumulated_huber_error += huber(e_t, delta)
+            
+            # Crash penalty (if attitude is provided)
+            if attitude is not None:
+                # Penalize excessive pitch/roll deviations from goal
+                pitch_error = abs(attitude.pitch_deg - self.goal_orientation['pitch_deg'])
+                roll_error = abs(attitude.roll_deg - self.goal_orientation['roll_deg'])
+                
+                # Large penalty for dangerous attitudes
+                if pitch_error > 30 or roll_error > 20:
+                    r -= 50.0  # Severe crash penalty
+                elif pitch_error > 20 or roll_error > 15:
+                    r -= 20.0  # Moderate penalty
+                elif pitch_error > 10 or roll_error > 10:
+                    r -= 5.0   # Light penalty
+            
+            # Vicinity bonus
+            # if in_vicinity:
+            #     gamma_s = 1.0  # Base vicinity bonus
+            #     eta = 1.0     # Log scaling factor
+                # r += gamma_s + eta * math.log1p(self.eps_stable_time)
+            
+            # Success termination bonus
+            T_stable = self.max_episode_steps // 2  # Success threshold
+            if self.eps_stable_time >= T_stable:
+                  # Success bonus
+                r += self.reward_coefs.get("success_reward")
+            
+            # Timeout reward (when episode ends due to max steps)
+            if self.episode_step >= self.max_episode_steps:
+                kappa = 1.0    # Stable time coefficient
+                nu = 1.0      # Huber error coefficient
+                r += kappa * self.max_stable_time - nu * self.accumulated_huber_error
+            return r
+        else:
+            raise NotImplementedError()
         
-        # Vicinity bonus
-        if in_vicinity:
-            gamma_s = 0.1  # Base vicinity bonus
-            eta = 0.05     # Log scaling factor
-            r += gamma_s + eta * math.log1p(self.eps_stable_time)
-        
-        # Success termination bonus
-        T_stable = self.max_episode_steps // 2  # Success threshold
-        if self.eps_stable_time >= T_stable:
-            R_succ = 100.0  # Success bonus
-            r += R_succ
-        
-        # Timeout reward (when episode ends due to max steps)
-        if self.episode_step >= self.max_episode_steps:
-            kappa = 1    # Stable time coefficient
-            nu = 0.1      # Huber error coefficient
-            r += kappa * self.max_stable_time - nu * self.accumulated_huber_error
-        return r
-    
     def close(self):
         """Clean up resources."""
         logger.info("Closing environment...")

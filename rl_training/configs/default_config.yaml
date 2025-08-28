@@ -12,55 +12,20 @@ environment_config:
   observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"  # Which PID gains to observe
   observable_states: "alt_err+vZ_err+accZ_err" # Which states to observe
   action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"      # Which PID gains to adjust
-  reward_config: "error"       
+  reward_config: "hover"       
   action_dt: 0.1                 # Time interval between action and observation
   takeoff_altitude: 5.0          #  meters
   verbose: false                 # controls custom logging not internal
   # normalize_observations: true   # Whether to normalize observations
   # normalize_actions: false       # Whether to normalize actions
 
-
-ardupilot_config:
-  ardupilot_path: "/home/pid_rl/ardupilot"    # Path to ArduPilot directory
-  frame: "gazebo-iris"                         # Vehicle model for Gazebo
-  name: "iris_with_ardupilot"                  # Vehicle name
-  ideal_sensors: true                           # Use ideal sensor models
-  instance: 0                                  # Instance number for multiple vehicles
-  count: null                                  # Number of vehicle instances
-  location: null                               # Home location: [lat, lon, alt, yaw]
-  speedup: 10                                  # Simulation speed multiplier
-  wipe_eeprom: true                            # Clear EEPROM on startup
-  use_dir: null                                # Custom directory for SITL
-  delay_start: null                            # Startup delay in seconds
-  model: "JSON"                                # Vehicle model format
-  clean: true                                  # Clean build before starting
-  no_rebuild: true                             # Skip rebuilding
-  no_configure: true                           # Skip configuration
-  no_mavproxy: false                           # Launch MAVProxy
-  udp: true                                    # Use UDP communication
-  map: false                                   # Show map interface
-  console: false                               # Show console interface
-  mavproxy_args: null                          # Additional MAVProxy arguments
-  timeout: 30.0                                # SITL startup timeout
-  min_startup_delay: 5.0                       # Minimum startup delay
-  mavsdk_port: 14550                           # MAVSDK connection port
-  master_port: 14551                           # MAVLink master port
-  port_check_timeout: 30.0                     # Port availability timeout
-
-# Gazebo configuration
-# control the wind from the sdf file directly
-gazebo_config:
-  sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  
-  gui: true                                         
-  verbose: false          # enables -v 4; internal logging of gz            
-
 training_config:
   total_timesteps: 1000000                        # Total training timesteps
   eval_freq: 1000                               # Evaluation frequency
-  save_freq: 1000                            # Model saving frequency
-  log_freq: 50                                # Logging frequency
+  save_freq: 1000                              # Model saving frequency
+  log_freq: 50                                 # Logging frequency
   runs_base: "/home/pid_rl/rl_training/runs"            # Base directory for all runs
-  algo: "ddpg"                                # Algorithm name for run dir
+  algo: "ddpg"                                 # Algorithm name for run dir
   mission: "hover"                                
   model_name_prefix: "ddpg_ardupilot"          # Model name prefix
   progress_bar: true                           # Show training progress bar
@@ -110,26 +75,52 @@ evaluation_config:
 # Comment out sections you don't want to use or set weights to 0
 reward_config:
   hover:                                       # Hover reward function
-    target_position: [0.0, 0.0, 10.0]         # Target hover position [x, y, z]
-    position_weight: 1.0                       # Weight for position error
-    velocity_weight: 0.1                       # Weight for velocity error
-    attitude_weight: 0.5                       # Weight for attitude error
-    action_weight: 0.01                        # Weight for action magnitude
+    alt_w: 1.0                       # Weight for altitude error
+    xy_w: 1.0                        # Weight for XY position error
+    velN_w: 1.0                      # Weight for North velocity magnitude
+    velE_w: 1.0                      # Weight for East velocity magnitude
+    velZ_w: 1.0                      # Weight for Down velocity magnitude
+    accN_w: 1.0                      # Weight for North acceleration magnitude
+    accE_w: 1.0                      # Weight for East acceleration magnitude
+    accZ_w: 1.0                      # Weight for Down acceleration magnitude
+    acc_yaw_w: 1.0                   # Weight for Down acceleration magnitude
+    att_w: 1.5                       # Weight for attitude error
+    vicinity: 0.05
+    success_reward: 100
     crash_penalty: -100.0                      # Penalty for crashes
-  
-  waypoint:                                    # Waypoint navigation reward
-    waypoints: [[10.0, 0.0, 10.0], [0.0, 10.0, 10.0], [0.0, 0.0, 10.0]]  # Waypoint list
-    position_weight: 1.0                       # Weight for position error
-    velocity_weight: 0.1                       # Weight for velocity error
-    waypoint_reached_reward: 100.0             # Reward for reaching waypoints
-    crash_penalty: -100.0                      # Penalty for crashes
-    waypoint_threshold: 5.0                    # Distance threshold for waypoint completion
-  
-  pid_tuning:                                  # PID tuning reward function
-    setpoint: [0.0, 0.0, 10.0, 0.0]           # Target setpoint [x, y, z, yaw]
-    error_weight: 1.0                          # Weight for tracking error
-    overshoot_penalty: 0.5                     # Penalty for overshooting
-    settling_time_weight: 0.1                  # Weight for settling time
-    crash_penalty: -100.0                      # Penalty for crashes
-    settling_threshold: 0.1                    # Settling threshold
-  
+
+
+
+ardupilot_config:
+  ardupilot_path: "/home/pid_rl/ardupilot"    # Path to ArduPilot directory
+  frame: "gazebo-iris"                         # Vehicle model for Gazebo
+  name: "iris_with_ardupilot"                  # Vehicle name
+  ideal_sensors: true                           # Use ideal sensor models
+  instance: 0                                  # Instance number for multiple vehicles
+  count: null                                  # Number of vehicle instances
+  location: null                               # Home location: [lat, lon, alt, yaw]
+  speedup: 10                                  # Simulation speed multiplier
+  wipe_eeprom: true                            # Clear EEPROM on startup
+  use_dir: null                                # Custom directory for SITL
+  delay_start: null                            # Startup delay in seconds
+  model: "JSON"                                # Vehicle model format
+  clean: true                                  # Clean build before starting
+  no_rebuild: true                             # Skip rebuilding
+  no_configure: true                           # Skip configuration
+  no_mavproxy: false                           # Launch MAVProxy
+  udp: true                                    # Use UDP communication
+  map: false                                   # Show map interface
+  console: false                               # Show console interface
+  mavproxy_args: null                          # Additional MAVProxy arguments
+  timeout: 30.0                                # SITL startup timeout
+  min_startup_delay: 5.0                       # Minimum startup delay
+  mavsdk_port: 14550                           # MAVSDK connection port
+  master_port: 14551                           # MAVLink master port
+  port_check_timeout: 30.0                     # Port availability timeout
+
+# Gazebo configuration
+# control the wind from the sdf file directly
+gazebo_config:
+  sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  
+  gui: true                                         
+  verbose: false          # enables -v 4; internal logging of gz            
