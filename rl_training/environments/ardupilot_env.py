@@ -468,10 +468,8 @@ class ArdupilotEnv(gym.Env):
             velocity = pose_vel.velocity
 
             # Calculate position error (2D distance)
-            pos_err = messages["NAV_CONTROLLER_OUTPUT"].wp_dist
-            # print("wp_error")
-            # print(pos_err)            
-            
+            pos_err = messages["NAV_CONTROLLER_OUTPUT"].wp_dist   # in cm integers
+
             alt_err = messages["NAV_CONTROLLER_OUTPUT"].alt_error
 
             print(messages["DEBUG_VECT"])
@@ -535,7 +533,7 @@ class ArdupilotEnv(gym.Env):
             # Vicinity bonus
             # if in_vicinity:
             #     gamma_s = 1.0  # Base vicinity bonus
-            #     eta = 1.0     # Log scaling factor
+            #     eta = 1.0      # Log scaling factor
                 # r += gamma_s + eta * math.log1p(self.eps_stable_time)
             
             # Success termination bonus

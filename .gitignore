@@ -17,6 +17,7 @@
 !run-wsl.sh
 !Makefile
 !GCS_MAVLink_Copter.cpp
+!mode_guided.cpp
 
 rl_training/runs/
 
