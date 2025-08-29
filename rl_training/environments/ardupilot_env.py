@@ -332,7 +332,7 @@ class ArdupilotEnv(gym.Env):
         }
 
         reward = self._compute_reward(messages, reason)
-        print(reward)
+        print(f"Reward {reward}")
         for i, var in enumerate(self.action_gains):
             info[var] = new_gains[var]
 
@@ -412,7 +412,6 @@ class ArdupilotEnv(gym.Env):
         alt_error_cm = abs(alt_error_cm)
 
         eps_in = 5  # Inner vicinity threshold
-        print(pos_error_cm, alt_error_cm)
         prev_in_vicinity = self.eps_stable_time > 0
         in_vicinity = (pos_error_cm <= eps_in and alt_error_cm <= eps_in) 
         return in_vicinity

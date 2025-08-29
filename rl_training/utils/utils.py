@@ -196,7 +196,7 @@ def demonstrate_observation_action_format(env):
 
 
 
-def evaluate_agent(model, env, num_episodes=None):
+def evaluate_agent(model, env, num_episodes):
     """
     Evaluate the trained agent.
     
@@ -208,10 +208,7 @@ def evaluate_agent(model, env, num_episodes=None):
     Returns:
         Evaluation results
     """
-    # Get evaluation parameters from config
-    if num_episodes is None:
-        evaluation_config = env.config.get('evaluation_config', {}) if hasattr(env, 'config') else {}
-        num_episodes = evaluation_config.get('n_eval_episodes', 5)
+
     
     print(f"\n🧪 Evaluating agent over {num_episodes} episodes...")
     
@@ -226,7 +223,6 @@ def evaluate_agent(model, env, num_episodes=None):
         print(f"   Episode {episode + 1}: ", end="")
         
         while True:
-            # Get action from the trained model
             if model:
                 action, _ = model.predict(obs, deterministic=True)  
             else:

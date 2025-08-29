@@ -156,7 +156,7 @@ def main():
         model = train_ddpg_agent(env, config, run_dirs)
         
         if model is not None:
-            results = evaluate_agent(model, env)
+            results = evaluate_agent(model, env, config.get("evaluation_config").get("n_eval_episodes"))
             
             # Save final model in run models dir
             model_name_prefix = training_config.get('model_name_prefix', 'ddpg_ardupilot')

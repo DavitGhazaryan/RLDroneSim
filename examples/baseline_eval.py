@@ -32,12 +32,9 @@ def main():
         
         env = ArdupilotEnv(config, eval=True)
         
-
         env = Monitor(env)
 
-        model = None
-
-        results = evaluate_agent(model, env)
+        results = evaluate_agent(model=None, env=env, num_episodes=5)
                 
     except Exception as e:
         print(f"\n❌ Error occurred: {e}")
