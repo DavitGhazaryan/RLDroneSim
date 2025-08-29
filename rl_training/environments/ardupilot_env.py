@@ -217,7 +217,7 @@ class ArdupilotEnv(gym.Env):
             master = self.sitl._get_mavlink_connection()
             hb = master.wait_heartbeat()
             messages = master.messages
-
+        
         for i, observable_state in enumerate(self.observable_states):
             idx = len(self.observable_gains) + i
             if observable_state == 'alt_err':
@@ -225,10 +225,9 @@ class ArdupilotEnv(gym.Env):
             elif observable_state == 'vZ_err':
                 state_value = messages["DEBUG_VECT"].z
             elif observable_state == 'accZ_err':
-                state_value = messages["PID_TUNING[4]"].desired - messages["PID_TUNING[4]"].achieved
+                state_value = messages["PID_TUNING[4]"].desired - messages["PID_TUNING[4]"].achieved   # underneath it is not desired but target
             else:
                 raise NotImplemented("Observation not available")
-                # For other states, try to get from NED position
             observation[idx] = state_value
 
         info = {}
@@ -452,8 +451,7 @@ class ArdupilotEnv(gym.Env):
             if self.eps_stable_time > self.max_stable_time:
                 self.max_stable_time = self.eps_stable_time
             self.eps_stable_time = 0
-        return False, None
-
+        return False, None 
 
     def _compute_reward(self, messages,  pose_vel, attitude):
         """
@@ -471,15 +469,17 @@ class ArdupilotEnv(gym.Env):
 
             # Calculate position error (2D distance)
             pos_err = messages["NAV_CONTROLLER_OUTPUT"].wp_dist
+            # print("wp_error")
+            # print(pos_err)            
             
-            # Calculate altitude error
             alt_err = messages["NAV_CONTROLLER_OUTPUT"].alt_error
 
-
-            # Velocity components (magnitude per axis)
-            vel_n = abs(velocity.north_m_s) 
-            vel_e = abs(velocity.east_m_s) 
-            vel_d = abs(velocity.down_m_s) 
+            print(messages["DEBUG_VECT"])
+            
+            # Velocity error components 
+            vel_n = messages["DEBUG_VECT"].y 
+            vel_e = messages["DEBUG_VECT"].x 
+            vel_d = messages["DEBUG_VECT"].z
             
             # Acceleration components if available
             acc_n = messages["PID_TUNING[1]"].desired - messages["PID_TUNING[1]"].achieved

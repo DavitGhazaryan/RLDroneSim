@@ -16,6 +16,7 @@
 !run-native.sh
 !run-wsl.sh
 !Makefile
+!GCS_MAVLink_Copter.cpp
 
 rl_training/runs/
 
