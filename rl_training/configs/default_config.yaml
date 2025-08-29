@@ -7,7 +7,7 @@
 # =============================================================================
 
 environment_config:
-  max_episode_steps: 20          
+  max_episode_steps: 20
   mode: "altitude"               # Flight mode: position, attitude, stabilize, altitude
   observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"  # Which PID gains to observe
   observable_states: "alt_err+vZ_err+accZ_err" # Which states to observe
@@ -36,8 +36,8 @@ training_config:
 # Core hyperparameters for the DDPG algorithm
 ddpg_params:
   learning_rate: 0.001                          # Learning rate for actor and critic networks
-  buffer_size: 1000000                          # Size of replay buffer
-  learning_starts: 10000                          # Steps before learning begins
+  buffer_size: 100000                          # Size of replay buffer
+  learning_starts: 500                          # Steps before learning begins
   batch_size: 1024                               # Batch size for training
   tau: 0.005                                   # Soft update coefficient for target networks
   gamma: 0.99                                  # Discount factor for future rewards
@@ -65,7 +65,7 @@ callbacks:
 
 # Evaluation configuration
 evaluation_config:
-  n_eval_episodes: 1                           # Number of evaluation episodes
+  n_eval_episodes: 2                           # Number of evaluation episodes
   deterministic: true                           # Use deterministic actions
   save_results: true                            # Save evaluation results
   plot_results: false                            # Plot evaluation results
@@ -75,16 +75,16 @@ evaluation_config:
 # Comment out sections you don't want to use or set weights to 0
 reward_config:
   hover:                                       # Hover reward function
-    alt_w: 1.0                       # Weight for altitude error
-    xy_w: 1.0                        # Weight for XY position error
-    velN_w: 1.0                      # Weight for North velocity magnitude
-    velE_w: 1.0                      # Weight for East velocity magnitude
-    velZ_w: 1.0                      # Weight for Down velocity magnitude
-    accN_w: 1.0                      # Weight for North acceleration magnitude
-    accE_w: 1.0                      # Weight for East acceleration magnitude
-    accZ_w: 1.0                      # Weight for Down acceleration magnitude
-    acc_yaw_w: 1.0                   # Weight for Down acceleration magnitude
-    att_w: 1.5                       # Weight for attitude error
+    alt_w: 0.2                       # Weight for altitude error
+    xy_w: 0.1                        # Weight for XY position error
+    velN_w: 0.08                      # Weight for North velocity mag
+    velE_w: 0.08                      # Weight for East velocity magnitude
+    velZ_w: 0.08                      # Weight for Down velocity magnitude
+    accN_w: 0.05                      # Weight for North acceleration magnitude
+    accE_w: 0.05                      # Weight for East acceleration magnitude
+    accZ_w: 0.05                      # Weight for Down acceleration magnitude
+    acc_yaw_w: 0.05                   # Weight for yaw acceleration magnitude
+    att_w: 0.8                       # Weight for attitude error
     vicinity: 0.05
     success_reward: 100
     crash_penalty: -100.0                      # Penalty for crashes
@@ -99,7 +99,7 @@ ardupilot_config:
   instance: 0                                  # Instance number for multiple vehicles
   count: null                                  # Number of vehicle instances
   location: null                               # Home location: [lat, lon, alt, yaw]
-  speedup: 10                                  # Simulation speed multiplier
+  speedup: 5                                  # Simulation speed multiplier
   wipe_eeprom: true                            # Clear EEPROM on startup
   use_dir: null                                # Custom directory for SITL
   delay_start: null                            # Startup delay in seconds

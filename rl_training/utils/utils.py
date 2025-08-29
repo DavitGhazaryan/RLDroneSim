@@ -201,7 +201,7 @@ def evaluate_agent(model, env, num_episodes=None):
     Evaluate the trained agent.
     
     Args:
-        model: Trained DDPG model
+        model: Trained model, if none then evaluate the baseline fixed PID
         env: Modified ArdupilotEnv
         num_episodes: Number of evaluation episodes (overrides config if provided)
         
@@ -227,8 +227,10 @@ def evaluate_agent(model, env, num_episodes=None):
         
         while True:
             # Get action from the trained model
-            action, _ = model.predict(obs, deterministic=True)
-            
+            if model:
+                action, _ = model.predict(obs, deterministic=True)  
+            else:
+                action = env.action_space.sample()  
             # Take step in environment
             obs, reward, terminated, truncated, info = env.step(action)
             

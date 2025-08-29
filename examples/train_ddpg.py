@@ -9,7 +9,7 @@ import sys
 sys.path.insert(0, "/home/pid_rl")
 
 from rl_training.environments import ArdupilotEnv
-from rl_training.utils.utils import load_config, validate_config, demonstrate_observation_action_format, evaluate_agent
+from rl_training.utils.utils import load_config, validate_config, evaluate_agent
 
 from stable_baselines3 import DDPG
 from stable_baselines3.common.callbacks import CheckpointCallback
