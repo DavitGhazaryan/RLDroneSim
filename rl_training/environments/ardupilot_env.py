@@ -332,7 +332,6 @@ class ArdupilotEnv(gym.Env):
         }
 
         reward = self._compute_reward(messages, reason)
-        print(f"Reward {reward}")
         for i, var in enumerate(self.action_gains):
             info[var] = new_gains[var]
 
@@ -482,7 +481,7 @@ class ArdupilotEnv(gym.Env):
             vel_err_n = messages["DEBUG_VECT"].y 
             vel_err_e = messages["DEBUG_VECT"].x 
             vel_err_d = messages["DEBUG_VECT"].z
-            
+
             # Acceleration components if available
             acc_err_n = messages["PID_TUNING[1]"].desired - messages["PID_TUNING[1]"].achieved
             acc_err_e = messages["PID_TUNING[2]"].desired - messages["PID_TUNING[2]"].achieved

@@ -46,6 +46,10 @@ services:
       - ./tests:/home/pid_rl/tests
       - ./requirements.txt:/home/pid_rl/requirements.txt
       - ./copied/simple_world.sdf:/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf
+      - ./copied/simple_world_2.sdf:/home/pid_rl/ardupilot_gazebo/worlds/simple_world_2.sdf
+      - ./copied/iris_with_ardupilot_2:/home/pid_rl/ardupilot_gazebo/models/iris_with_ardupilot_2
+      - ./copied/GCS_MAVLink_Copter.cpp:/home/pid_rl/ardupilot/ArduCopter/GCS_MAVLink_Copter.cpp
+      - ./copied/mode_guided.cpp:/home/pid_rl/ardupilot/ArduCopter/mode_guided.cpp
       - ./copied/lua_scripts:/home/pid_rl/ardupilot/scripts
 
 

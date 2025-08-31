@@ -65,6 +65,7 @@ This project uses Docker for easy deployment and consistent environment setup. T
    docker exec -it pid_rl_container bash
    ```
 
+See [DEVELOPMENT NOTES](#development-notes--) !!!
 ## Setup for Windows with WSLG
 
 This section describes how to set up the project on Windows using WSLG (Windows Subsystem for Linux GUI) for GUI applications.
@@ -98,6 +99,16 @@ This section describes how to set up the project on Windows using WSLG (Windows 
    ```bash
    docker exec -it pid_rl_container bash
    ```
+
+### DEVELOPMENT NOTES!!!
+For now some of the files are being copied into the container at start time. Letter those will be set in the Dockerfile.
+Meanwhile, after creating the container you may need to rebuild the ArduCopter make the changed files take effect.
+   ```bash
+   ./waf clean
+   ./waf configure --board sitl
+   ./waf copter
+   ```
+
 
 ### Verification Tests
 
