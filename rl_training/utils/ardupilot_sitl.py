@@ -34,13 +34,16 @@ class ArduPilotSITL:
 
     """
 
-    def __init__(self, config: Dict[str, Any], verbose=True):
+    def __init__(self, config: Dict[str, Any], instance, verbose=True):
         if verbose:
             logging.basicConfig(level=logging.INFO)
         else:
             logging.basicConfig(level=logging.ERROR)
+        
 
         self.config = config
+        self.instance = instance
+
         self.process: Optional[subprocess.Popen] = None
         self.child_processes: List[int] = []
         self.log_threads: List[threading.Thread] = []  # Store references to logging threads
@@ -56,9 +59,9 @@ class ArduPilotSITL:
         self.vehicle         = 'ArduCopter'
         self.frame           = config.get('frame')
         self.ideal_sensors   = config.get('ideal_sensors')
+
         # optional
         self.name             = config.get('name')
-        self.instance         = config.get('instance')
         self.count            = config.get('count')
         self.location_str     = config.get('location')
         self.speedup          = config.get('speedup')
@@ -396,7 +399,7 @@ class ArduPilotSITL:
         if self.no_rebuild              : cmd.append('--no-rebuild')
         if self.no_configure            : cmd.append('--no-configure')
 
-        if self.instance    is not None: cmd += ['-I', str(self.instance)]
+        if self.instance    is not None: cmd += ['-I', str(self.instance-1)]
         if self.count       is not None: cmd += ['-n', str(self.count)]
         if self.location_str:            cmd += ['-l', self.location_str]
         if self.speedup    is not None:  cmd += ['--speedup', str(self.speedup)]
@@ -412,13 +415,17 @@ class ArduPilotSITL:
         if self.ideal_sensors:
             cmd.append(f'--add-param-file=/home/pid_rl/rl_training/configs/ideal_sensors.param')
 
+        if self.instance == 2:
+            self.master_port += 10
+            self.mavsdk_port += 10
+
 
         if self.master_port is not None and self.mavsdk_port is not None:
             cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port} --out udp:127.0.0.1:{self.mavsdk_port}')
-            # cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port}')
         else:
             cmd.append(f'--mavproxy-args={self.mavproxy_args}')
-
+        print("COmmand")
+        print(cmd)
         return cmd
 
     def _start_log_threads(self):
@@ -605,7 +612,11 @@ class ArduPilotSITL:
 
         # Create new connection instance
         logger.debug("Creating new MAVSDK System instance")
-        self._mavsdk_system = System()
+        if self.instance == 1:
+            p = 50051
+        else:
+            p = 50052
+        self._mavsdk_system = System(port=p)
         
         # Build connection address
         port = self.mavsdk_port

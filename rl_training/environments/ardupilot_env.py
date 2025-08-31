@@ -30,7 +30,7 @@ class ArdupilotEnv(gym.Env):
     Environment is intended to enable training if an RL agent that will find the optimal PID gains to put on an agent.  
     """
     
-    def __init__(self, config, eval=False):
+    def __init__(self, config, eval=False, instance=1):
         super().__init__()
         self.np_random, _ = seeding.np_random(None)  # init
 
@@ -55,8 +55,8 @@ class ArdupilotEnv(gym.Env):
         else:
             logger.setLevel(logging.ERROR)
 
-        self.gazebo = GazeboInterface(config['gazebo_config'], self.verbose)
-        self.sitl = ArduPilotSITL(config['ardupilot_config'], self.verbose)
+        self.gazebo = GazeboInterface(config['gazebo_config'], instance, self.verbose)
+        self.sitl = ArduPilotSITL(config['ardupilot_config'], instance, self.verbose)
         self.loop = asyncio.get_event_loop()
 
         # Episode tracking

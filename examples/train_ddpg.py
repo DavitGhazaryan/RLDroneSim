@@ -121,6 +121,20 @@ def train_ddpg_agent(env, config, run_dirs=None):
 
 def main():
     """Main function demonstrating the complete workflow."""
+    if len(sys.argv) == 1:
+        instance = 1
+    else:
+        try:
+            instance = int(sys.argv[1])
+        except ValueError:
+            print("Error: argument must be an integer (1 or 2).")
+            sys.exit(1)
+
+        if instance not in (1, 2):
+            print("Error: argument must be 1 or 2.")
+            sys.exit(1)
+
+    print(f"Using value: {instance}")
     
     print("🚁 ArdupilotEnv + Stable Baselines DDPG Experiment")
     print("=" * 70)
@@ -139,7 +153,7 @@ def main():
         
         print("🔧 Creating  ArdupilotEnv...")
         
-        env = ArdupilotEnv(config)
+        env = ArdupilotEnv(config, instance=instance)
         
         # Prepare run directory structure
         training_config = config.get('training_config', {})

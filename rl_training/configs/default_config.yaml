@@ -92,14 +92,13 @@ reward_config:
 
 
 ardupilot_config:
-  ardupilot_path: "/home/pid_rl/ardupilot"    # Path to ArduPilot directory
+  ardupilot_path: "/home/pid_rl/ardupilot"     # Path to ArduPilot directory
   frame: "gazebo-iris"                         # Vehicle model for Gazebo
   name: "iris_with_ardupilot"                  # Vehicle name
-  ideal_sensors: true                           # Use ideal sensor models
-  instance: 0                                  # Instance number for multiple vehicles
+  ideal_sensors: true                          # Use ideal sensor models
   count: null                                  # Number of vehicle instances
   location: null                               # Home location: [lat, lon, alt, yaw]
-  speedup: 5                                  # Simulation speed multiplier
+  speedup: 5                                   # Simulation speed multiplier
   wipe_eeprom: true                            # Clear EEPROM on startup
   use_dir: null                                # Custom directory for SITL
   delay_start: null                            # Startup delay in seconds
@@ -114,13 +113,13 @@ ardupilot_config:
   mavproxy_args: null                          # Additional MAVProxy arguments
   timeout: 30.0                                # SITL startup timeout
   min_startup_delay: 5.0                       # Minimum startup delay
-  mavsdk_port: 14550                           # MAVSDK connection port
-  master_port: 14551                           # MAVLink master port
+  mavsdk_port: 14550   # +10 for I 1           # MAVSDK port    
+  master_port: 14551   # +10 for I 1           # MAVLink master port
   port_check_timeout: 30.0                     # Port availability timeout
 
 # Gazebo configuration
 # control the wind from the sdf file directly
 gazebo_config:
-  sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  
+  sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  # always write the version for 1 instance
   gui: true                                         
   verbose: false          # enables -v 4; internal logging of gz            

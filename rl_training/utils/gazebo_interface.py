@@ -16,7 +16,7 @@ logger = logging.getLogger("GazeboInterface")
 
 class GazeboInterface:
     
-    def __init__(self, config: Dict[str, Any], verbose):
+    def __init__(self, config: Dict[str, Any], instance, verbose):
         if verbose:
             logger.setLevel(logging.INFO) 
         else:
@@ -25,8 +25,17 @@ class GazeboInterface:
         self.config = config
         self.process = None
         self.is_started = False
-        
+        self.instance = instance
         self.sdf_file = config.get('sdf_file')
+        
+        # If self.instance == 2, modify the sdf_file path to append _2 before .sdf
+        if self.instance == 2:
+            os.environ["GZ_PARTITION"] = "gz_i1"
+            if self.sdf_file.endswith('.sdf'):
+                self.sdf_file = self.sdf_file[:-4] + '_2.sdf'
+        else:
+            os.environ["GZ_PARTITION"] = "gz_i0"
+   
         logger.info(f"SDF file: {self.sdf_file}")
         self.world_name = self._parse_world_name(self.sdf_file)
 
