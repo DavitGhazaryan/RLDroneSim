@@ -2,7 +2,6 @@ import subprocess
 import time
 import os
 import signal
-import psutil
 import logging
 import xml.etree.ElementTree as ET
 import json

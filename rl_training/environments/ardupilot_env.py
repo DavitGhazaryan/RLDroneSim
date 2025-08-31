@@ -165,9 +165,10 @@ class ArdupilotEnv(gym.Env):
 
             ## Setup Mission
             pose_ned = self.loop.run_until_complete(self.sitl.get_pose_NED_async())
-
+            master = self.sitl._get_mavlink_connection()
             for gain in self.action_gains:
-                self.ep_initial_gains[gain] = self.loop.run_until_complete(self.sitl.get_param_async(gain))
+                # self.ep_initial_gains[gain] = self.loop.run_until_complete(self.sitl.get_param_async(gain))
+                self.ep_initial_gains[gain] = self.sitl.get_param(master, gain)
                 
 
             self.ep_initial_pose = {
@@ -192,15 +193,16 @@ class ArdupilotEnv(gym.Env):
             self.accumulated_huber_error = 0.0
 
             logger.info(f"Setting gains to {self.ep_initial_gains}")
-
+            master = self.sitl._get_mavlink_connection()
             for gain in self.action_gains:
-                self.loop.run_until_complete(self.sitl.set_param_async(gain, self.ep_initial_gains[gain]))
+                self.sitl.set_param_and_confirm(master, gain, self.ep_initial_gains[gain])
+                # self.loop.run_until_complete(self.sitl.set_param_async(gain, self.ep_initial_gains[gain]))
 
             logger.info(f"Setting drone to {self.ep_initial_pose}")
             
-            # self.gazebo.pause_simulation()
+            self.gazebo.pause_simulation()
             self.gazebo.transport_position(self.sitl.name, [self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]], euler_to_quaternion(None))
-            # self.gazebo.resume_simulation()
+            self.gazebo.resume_simulation()
 
             self.send_reset_NEAGL(self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
         observation, info = self.loop.run_until_complete(self._async_get_observation())
@@ -252,7 +254,7 @@ class ArdupilotEnv(gym.Env):
         
         # Fill gains first
         for i, observable_gain in enumerate(self.observable_gains):
-            gain_value = await drone.param.get_param_float(observable_gain)
+            gain_value  = self.sitl.get_param(self.sitl._get_mavlink_connection(), observable_gain)
             observation[i] = gain_value
         
         # Fill states
@@ -318,11 +320,11 @@ class ArdupilotEnv(gym.Env):
 
         if len(action) != len(self.action_gains):
             raise ValueError(f"Expected action of length {len(self.action_gains)}, got {len(action)}")
-        
+        master = self.sitl._get_mavlink_connection()
         # Get current gains
         new_gains = {}
         for variable in self.action_gains:
-            new_gains[variable] = await drone.param.get_param_float(variable)
+            new_gains[variable] = self.sitl.get_param(master, variable)
         
         for i, var in enumerate(self.action_gains):
             new_gains[var] += action[i]
@@ -417,9 +419,11 @@ class ArdupilotEnv(gym.Env):
 
         drone = await self.sitl._get_mavsdk_connection()
         await drone.action.set_takeoff_altitude(self.takeoff_altitude)
-        await asyncio.sleep(3/self.sitl.speedup) 
+        # await asyncio.sleep(3/self.sitl.speedup) 
+        await asyncio.sleep(3) 
         await drone.action.takeoff()
-        await asyncio.sleep(30/self.sitl.speedup)
+        # await asyncio.sleep(7/self.sitl.speedup)
+        await asyncio.sleep(7)
 
     async def _gazebo_sleep(self, duration):
         """
@@ -472,7 +476,6 @@ class ArdupilotEnv(gym.Env):
         
         # 4. goal is reached - check both position and altitude
         pos_err_cm = messages["NAV_CONTROLLER_OUTPUT"].wp_dist   # in cm integers
-
         alt_err_m = messages["NAV_CONTROLLER_OUTPUT"].alt_error
         
         # Check if in vicinity using helper method
