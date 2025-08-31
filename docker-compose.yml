@@ -19,13 +19,12 @@ services:
       - apparmor:unconfined
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ./docs:/home/pid_rl/docs
       - ./examples:/home/pid_rl/examples
       - ./rl_training:/home/pid_rl/rl_training
       - ./tests:/home/pid_rl/tests
       - ./requirements.txt:/home/pid_rl/requirements.txt
-      - ./simple_world.sdf:/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf
-      - ./lua_scripts:/home/pid_rl/ardupilot/scripts
+      - ./copied/simple_world.sdf:/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf
+      - ./copied/lua_scripts:/home/pid_rl/ardupilot/scripts
     devices:
       - /dev/dri:/dev/dri
     network_mode: host

@@ -6,8 +6,6 @@
 !rl_training/
 !tests/
 !README.md
-!simple_world.sdf
-!lua_scripts  
 !examples/
 !docker-compose.yml
 !docker-compose-wslg.yml
@@ -16,8 +14,7 @@
 !run-native.sh
 !run-wsl.sh
 !Makefile
-!GCS_MAVLink_Copter.cpp
-!mode_guided.cpp
+!copied/
 
 rl_training/runs/
 
