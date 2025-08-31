@@ -211,17 +211,6 @@ class ArduPilotSITL:
             logger.error(f"Failed to set mode {mode_name}: {e}")
             return False
 
-    async def transport_and_reset_async(self, position, quaternion):
-        drone = await self._get_mavsdk_connection()
-        # reset trigger
-        await drone.param.set_param_float("SCR_USER1", 0)
-        # set position
-        await drone.param.set_param_float("SCR_USER2", position[0])   # x : east
-        await drone.param.set_param_float("SCR_USER3", position[1])   # y : north
-        await drone.param.set_param_float("SCR_USER4", position[2])   # z :     
-        # trigger
-        await drone.param.set_param_float("SCR_USER1", 1)
-
     async def set_param_async(self, param_name: str, value: float):
         drone = await self._get_mavsdk_connection()
         await drone.param.set_param_float(param_name, value)
@@ -424,8 +413,6 @@ class ArduPilotSITL:
             cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port} --out udp:127.0.0.1:{self.mavsdk_port}')
         else:
             cmd.append(f'--mavproxy-args={self.mavproxy_args}')
-        print("COmmand")
-        print(cmd)
         return cmd
 
     def _start_log_threads(self):

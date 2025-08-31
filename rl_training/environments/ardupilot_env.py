@@ -8,7 +8,7 @@ import logging
 import sys
 import asyncio
 import math
-
+import time
 sys.path.insert(0, "/home/student/Dev/pid_rl")
 
 from rl_training.utils.gazebo_interface import GazeboInterface
@@ -198,15 +198,45 @@ class ArdupilotEnv(gym.Env):
 
             logger.info(f"Setting drone to {self.ep_initial_pose}")
             
-            self.gazebo.pause_simulation()
+            # self.gazebo.pause_simulation()
             self.gazebo.transport_position(self.sitl.name, [self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]], euler_to_quaternion(None))
-            self.gazebo.resume_simulation()
+            # self.gazebo.resume_simulation()
 
-            self.loop.run_until_complete(self.sitl.transport_and_reset_async([self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]], euler_to_quaternion(None)))
-        
+            self.send_reset_NEAGL(self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
         observation, info = self.loop.run_until_complete(self._async_get_observation())
         return observation, info  # observation, info
 
+    def send_reset_NEAGL(self, n, e, agl, seq=None, retries=3, ack_timeout=1.5):
+        m = self.sitl._get_mavlink_connection()
+        CMD = 31010
+        if seq is None:
+            seq = int(time.time() * 1000) & 0x7FFFFFFF  # monotonic-ish
+
+        def tx():
+            m.mav.command_long_send(
+                m.target_system, m.target_component,
+                CMD, 0,          # confirmation=0
+                float(n), float(e), float(agl),
+                float(seq), 0, 0, 0
+            )
+
+        def wait_ack():
+            t0 = time.time()
+            while time.time() - t0 < ack_timeout:
+                msg = m.recv_match(type='COMMAND_ACK', blocking=False)
+                if msg and int(msg.command) == CMD:
+                    return int(msg.result)  # 0 = ACCEPTED
+                time.sleep(0.01)
+            return None
+
+        for _ in range(retries):
+            tx()
+            res = wait_ack()
+            if res == 0:  # ACCEPTED
+                return True
+            time.sleep(0.1)
+        return False
+    
     async def _async_get_observation(self, messages=None):
         """
         Get the observations of the environment as a flattened array.
