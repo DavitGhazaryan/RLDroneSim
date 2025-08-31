@@ -196,7 +196,6 @@ class ArdupilotEnv(gym.Env):
             master = self.sitl._get_mavlink_connection()
             for gain in self.action_gains:
                 self.sitl.set_param_and_confirm(master, gain, self.ep_initial_gains[gain])
-                # self.loop.run_until_complete(self.sitl.set_param_async(gain, self.ep_initial_gains[gain]))
 
             logger.info(f"Setting drone to {self.ep_initial_pose}")
             
@@ -329,7 +328,7 @@ class ArdupilotEnv(gym.Env):
         for i, var in enumerate(self.action_gains):
             new_gains[var] += action[i]
             new_gains[var] = max(new_gains[var], 0)
-            await drone.param.set_param_float(var, new_gains[var])
+            self.sitl.set_param_and_confirm(master, var, new_gains[var])
         
         await self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
 
