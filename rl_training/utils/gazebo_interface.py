@@ -7,6 +7,11 @@ import xml.etree.ElementTree as ET
 import json
 from typing import Dict, Any
 import threading
+from gz.transport13 import Node
+from gz.msgs10.world_control_pb2 import WorldControl
+from gz.msgs10.boolean_pb2 import Boolean
+
+
 
 
 logger = logging.getLogger("GazeboInterface")
@@ -34,6 +39,8 @@ class GazeboInterface:
                 self.sdf_file = self.sdf_file[:-4] + '_2.sdf'
         else:
             os.environ["GZ_PARTITION"] = "gz_i0"
+      
+        self.node = Node()
    
         logger.info(f"SDF file: {self.sdf_file}")
         self.world_name = self._parse_world_name(self.sdf_file)
@@ -112,46 +119,72 @@ class GazeboInterface:
             raise RuntimeError("Gazebo transport service failed.")
  
     def pause_simulation(self):
+        # if self.instance == 2:
+        #     os.environ["GZ_PARTITION"] = "gz_i1"
+        # else:
+        #     os.environ["GZ_PARTITION"] = "gz_i0"
         logger.debug(f"⏸️  Pausing simulation in world: {self.world_name}")
-        try:
-            subprocess.run(
-                [
-                    "gz", "service",
-                    "-s", f"/world/{self.world_name}/control",
-                    "--reqtype", "gz.msgs.WorldControl",
-                    "--reptype", "gz.msgs.Boolean",
-                    "--timeout", "3000",
-                    "--req", "pause: true"
-                ],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            logger.debug("✅ Simulation paused.")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"❌ Failed to pause simulation: {e.stderr.decode()}")
-            raise RuntimeError("Gazebo pause service failed.")
+        svc = f"/world/{self.world_name}/control"
+        req = WorldControl()
+        req.pause = True                # True=pause, False=run
+        ok, rep = self.node.request(svc, req, WorldControl,  Boolean, timeout=2000)
+        if not ok:
+            raise RuntimeError(f"Service call failed: {svc}")
 
     def resume_simulation(self):
-        logger.debug(f"▶️  Resuming simulation in world: {self.world_name}")
-        try:
-            subprocess.run(
-                [
-                    "gz", "service",
-                    "-s", f"/world/{self.world_name}/control",
-                    "--reqtype", "gz.msgs.WorldControl",
-                    "--reptype", "gz.msgs.Boolean",
-                    "--timeout", "3000",
-                    "--req", "pause: false"
-                ],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            logger.debug("✅ Simulation resumed.")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"❌ Failed to resume simulation: {e.stderr.decode()}")
-            raise RuntimeError("Gazebo resume service failed.")
+        # if self.instance == 2:
+        #     os.environ["GZ_PARTITION"] = "gz_i1"
+        # else:
+        #     os.environ["GZ_PARTITION"] = "gz_i0"
+        logger.debug(f"⏸️  Pausing simulation in world: {self.world_name}")
+        svc = f"/world/{self.world_name}/control"
+        req = WorldControl()
+        req.pause = False                   # True=pause, False=run
+        ok, rep = self.node.request(svc, req, WorldControl,  Boolean, timeout=2000)
+        if not ok:
+            raise RuntimeError(f"Service call failed: {svc}")
+
+    # def pause_simulation(self):
+    #     logger.debug(f"⏸️  Pausing simulation in world: {self.world_name}")
+    #     try:
+    #         subprocess.run(
+    #             [
+    #                 "gz", "service",
+    #                 "-s", f"/world/{self.world_name}/control",
+    #                 "--reqtype", "gz.msgs.WorldControl",
+    #                 "--reptype", "gz.msgs.Boolean",
+    #                 "--timeout", "3000",
+    #                 "--req", "pause: true"
+    #             ],
+    #             check=True,
+    #             stdout=subprocess.PIPE,
+    #             stderr=subprocess.PIPE
+    #         )
+    #         logger.debug("✅ Simulation paused.")
+    #     except subprocess.CalledProcessError as e:
+    #         logger.error(f"❌ Failed to pause simulation: {e.stderr.decode()}")
+    #         raise RuntimeError("Gazebo pause service failed.")
+
+    # def resume_simulation(self):
+    #     logger.debug(f"▶️  Resuming simulation in world: {self.world_name}")
+    #     try:
+    #         subprocess.run(
+    #             [
+    #                 "gz", "service",
+    #                 "-s", f"/world/{self.world_name}/control",
+    #                 "--reqtype", "gz.msgs.WorldControl",
+    #                 "--reptype", "gz.msgs.Boolean",
+    #                 "--timeout", "3000",
+    #                 "--req", "pause: false"
+    #             ],
+    #             check=True,
+    #             stdout=subprocess.PIPE,
+    #             stderr=subprocess.PIPE
+    #         )
+    #         logger.debug("✅ Simulation resumed.")
+    #     except subprocess.CalledProcessError as e:
+    #         logger.error(f"❌ Failed to resume simulation: {e.stderr.decode()}")
+    #         raise RuntimeError("Gazebo resume service failed.")
    
     def get_sim_time(self):
         """
