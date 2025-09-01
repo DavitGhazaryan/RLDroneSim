@@ -1,6 +1,6 @@
 -- Reset to (N,E,AGL) via COMMAND_LONG MAV_CMD_USER_1
 local ZERO = Vector3f(); ZERO:x(0); ZERO:y(0); ZERO:z(0)
-local origin, last_seq = nil, -1
+local last_seq = -1
 
 local mavlink_msgs = require("MAVLink.mavlink_msgs")
 local COMMAND_LONG_ID = mavlink_msgs.get_msgid("COMMAND_LONG")
@@ -8,62 +8,65 @@ local CMD_USER1       = 31010 -- MAV_CMD_USER_1
 
 mavlink:init(10, 1)
 mavlink:register_rx_msgid(COMMAND_LONG_ID)
-mavlink:block_command(CMD_USER1)  -- prevent core from sending UNSUPPORTED acks
+mavlink:block_command(CMD_USER1)
 
-local function m_per_deg_lon(lat_deg) return 111319.5*math.cos(math.rad(lat_deg)) end
+local function finite(x) return x == x and x ~= math.huge and x ~= -math.huge end
+local function to_cm(m) return math.floor(m * 100 + 0.5) end
 
-local function capture_origin_once()
-  if origin then return true end
-  local h = ahrs:get_home(); if not h then return false end
-  origin = Location(); origin:lat(h:lat()); origin:lng(h:lng()); origin:alt(h:alt())
-  return true
+local function get_origin()
+  local L = ahrs:get_origin()
+  if L then return L end
+  local h = ahrs:get_home()
+  if not h then return nil end
+  L = Location(); L:lat(h:lat()); L:lng(h:lng()); L:alt(h:alt()); return L
 end
 
 local function target_from_offsets(n_m, e_m, agl_m)
-  local lat = origin:lat()/1e7; local lon = origin:lng()/1e7
-  local lat_o = math.floor((lat + n_m/111319.5)*1e7 + 0.5)
-  local lon_o = math.floor((lon + e_m/m_per_deg_lon(lat))*1e7 + 0.5)
-  local alt_cm = origin:alt() + math.floor(agl_m*100 + 0.5)
-  local L=Location(); L:lat(lat_o); L:lng(lon_o); L:alt(alt_cm); return L
+  if not (finite(n_m) and finite(e_m) and finite(agl_m)) then return nil end
+  local O = get_origin(); if not O then return nil end
+  local L = Location(); L:lat(O:lat()); L:lng(O:lng()); L:alt(O:alt())
+  L:offset(n_m, e_m)                -- safe meters→lat/lon
+  L:alt(O:alt() + to_cm(agl_m))     -- cm
+  return L
 end
 
 local function do_reset(n_m, e_m, agl_m)
-  if not capture_origin_once() then return end
   local tgt = target_from_offsets(n_m, e_m, agl_m)
+  if not tgt then gcs:send_text(0, "reset: no origin/invalid inputs"); return end
+
   if ahrs.reset then ahrs:reset() end
 
   local q = Quaternion()
-  q:from_euler(0, 0, 0)
-  gcs:send_text(0, string.format("pose lat=%.7f lon=%.7f alt_cm=%d", tgt:lat()/1e7, tgt:lng()/1e7, tgt:alt()))
+  -- keep current yaw, zero roll/pitch (or set 0,0,0 if you prefer)
+  local yaw = ahrs:get_yaw() or 0    -- radians
+  q:from_euler(0, 0, yaw)
+
+  -- gcs:send_text(0, string.format("pose lat=%.7f lon=%.7f alt_m=%.2f",
+    -- tgt:lat()/1e7, tgt:lng()/1e7, tgt:alt()/100.0))
 
   sim:set_pose(0, tgt, q, ZERO, ZERO)
-
 end
 
 function update()
-  capture_origin_once()
-
   local msg, chan = mavlink:receive_chan()
   if msg then
-    local parsed = mavlink_msgs.decode(msg, { [COMMAND_LONG_ID] = "COMMAND_LONG" })
+    local parsed = mavlink_msgs.decode(msg, { [COMMAND_LONG_ID]="COMMAND_LONG" })
     if parsed and parsed.msgid == COMMAND_LONG_ID and parsed.command == CMD_USER1 then
-      local n   = parsed.param1 or 0
-      local e   = parsed.param2 or 0
-      local agl = parsed.param3 or 0
-      local seq = math.floor(parsed.param4 or -1)
+      local n   = tonumber(parsed.param1) or 0
+      local e   = tonumber(parsed.param2) or 0
+      local agl = tonumber(parsed.param3) or 0
+      local seq = math.floor(tonumber(parsed.param4) or -1)
 
       if seq ~= last_seq then
         do_reset(n, e, agl)
         last_seq = seq
       end
 
-      -- ACK (ACCEPTED=0) back on same channel
       local ack = { command = CMD_USER1, result = 0, progress = 0, result_param2 = 0,
                     target_system = parsed.sysid, target_component = parsed.compid }
       mavlink:send_chan(chan, mavlink_msgs.encode("COMMAND_ACK", ack))
     end
   end
-
   return update, 50 -- 20 Hz
 end
 

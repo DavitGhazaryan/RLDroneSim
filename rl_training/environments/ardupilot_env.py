@@ -205,9 +205,8 @@ class ArdupilotEnv(gym.Env):
             self.gazebo.pause_simulation()
             self.gazebo.transport_position(self.sitl.name, [self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]], euler_to_quaternion(None))
             self.gazebo.resume_simulation()
-            print("resumed")
+            print(self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
             self.send_reset(master, self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
-            print("reseted")
         observation, info = self._get_observation()
         return observation, info  # observation, info
 
@@ -435,8 +434,6 @@ class ArdupilotEnv(gym.Env):
         """
         Sleep for the given duration (in seconds) using Gazebo simulation time.
         """
-        # print("That !!!!")
-        # print(self.gazebo.get_sim_time_from_state())
         start_time = self.gazebo.get_sim_time()
         print(start_time)
         while True:
