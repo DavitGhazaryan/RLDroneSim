@@ -20,16 +20,6 @@ from pymavlink import mavutil
 logger = logging.getLogger("SITL")  
 
 class ArduPilotSITL:
-    """
-    Implements the Async interface for Ardupilot SITL.
-
-    _reset_async()
-    set_params_async()
-    get_pid_params_async()
-    get_pid_param_async()
-    set_pid_param_async()
-
-    """
 
     def __init__(self, config: Dict[str, Any], instance, verbose=True):
         if verbose:
@@ -195,7 +185,6 @@ class ArduPilotSITL:
                 msg = master.recv_match(type='HEARTBEAT', blocking=False, timeout=0.1)
                 if msg and msg.custom_mode == mode_id:
                     logger.debug(f"Mode change to {mode_name} confirmed")
-                    logger.debug("   ")
                     return True
                     
                 time.sleep(0.1)
@@ -208,27 +197,10 @@ class ArduPilotSITL:
             return False
 
     def get_param(self, master, param_name, timeout=3.0, resend_every=0.5):
-        # Ensure targets from heartbeat
-        hb = master.wait_heartbeat()
-        try:
-            master.target_system = hb.get_srcSystem()
-            master.target_component = hb.get_srcComponent() or 1
-        except AttributeError:
-            master.target_system = hb.get_src_system()
-            master.target_component = hb.get_src_component() or 1
 
         name16 = param_name[:16]  # enforce MAVLink 16-char limit
         name_bytes = name16.encode("ascii", "ignore")
 
-        def cast_by_type(val, ptype):
-            mv = mavutil.mavlink
-            if ptype in (mv.MAV_PARAM_TYPE_INT8, mv.MAV_PARAM_TYPE_UINT8,
-                        mv.MAV_PARAM_TYPE_INT16, mv.MAV_PARAM_TYPE_UINT16,
-                        mv.MAV_PARAM_TYPE_INT32, mv.MAV_PARAM_TYPE_UINT32):
-                return int(val)
-            return float(val)
-
-        # Try direct read with periodic resend
         t0 = time.time()
         last = 0.0
         while time.time() - t0 < timeout:
@@ -241,23 +213,10 @@ class ArduPilotSITL:
             pid = (msg.param_id.decode("ascii", "ignore") if isinstance(msg.param_id, (bytes, bytearray))
                 else str(msg.param_id)).rstrip("\x00")
             if pid == name16:
-                return cast_by_type(msg.param_value, getattr(msg, "param_type", 0))
-
-        # Fallback: request full list
-        master.mav.param_request_list_send(master.target_system, master.target_component)
-        end = time.time() + max(5.0, timeout)
-        while time.time() < end:
-            msg = master.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.5)
-            if not msg:
-                continue
-            pid = (msg.param_id.decode("ascii", "ignore") if isinstance(msg.param_id, (bytes, bytearray))
-                else str(msg.param_id)).rstrip("\x00")
-            if pid == name16:
-                return cast_by_type(msg.param_value, getattr(msg, "param_type", 0))
-
+                return msg.param_value
+            
         raise TimeoutError(f"Timeout: param {param_name} not received")
-
-    
+   
     def is_running(self) -> bool:
         return bool(self.process and self.process.poll() is None)
 

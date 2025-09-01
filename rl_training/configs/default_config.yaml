@@ -15,7 +15,7 @@ environment_config:
   reward_config: "hover"       
   action_dt: 0.1                 # Time interval between action and observation
   takeoff_altitude: 5.0          #  meters
-  verbose: false                 # controls custom logging not internal
+  verbose: true                  # controls custom logging not internal
   # normalize_observations: true   # Whether to normalize observations
   # normalize_actions: false       # Whether to normalize actions
 

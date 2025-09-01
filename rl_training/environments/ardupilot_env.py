@@ -6,7 +6,6 @@ from gymnasium import spaces
 import numpy as np
 import logging
 import sys
-import asyncio
 import math
 import time
 from pymavlink import mavutil
@@ -58,7 +57,6 @@ class ArdupilotEnv(gym.Env):
 
         self.gazebo = GazeboInterface(config['gazebo_config'], instance, self.verbose)
         self.sitl = ArduPilotSITL(config['ardupilot_config'], instance, self.verbose)
-        self.loop = asyncio.get_event_loop()
 
         # Episode tracking
         self.initialized = False
@@ -68,7 +66,7 @@ class ArdupilotEnv(gym.Env):
         self.ep_initial_attitude = None   # {pitch_deg:, roll_deg:, yaw_deg:}
         self.ep_initial_gains = {}      # {gain_name: value}
         
-        self._async_mission_function = None
+        self.mission_function = None
         self.goal_orientation = None   # {pitch_deg:, roll_deg:, yaw_deg:}
         self.goal_pose = None          # {latitude_deg:, longitude_deg:, relative_altitude_m:}
         self.eps_stable_time = 0
@@ -162,15 +160,15 @@ class ArdupilotEnv(gym.Env):
             logger.debug(f"✅ SITL running (PID {info['pid']})")
             self.initialized = True
             time.sleep(5)
-            self.arm_drone(self.sitl._get_mavlink_connection())
 
             ## Setup Mission
-            master = self.sitl._get_mavlink_connection()
+            master = self.sitl._get_mavlink_connection()  
+            self.arm_drone(master)
+
             hb = master.wait_heartbeat()
             messages = master.messages
-            
+    
             for gain in self.action_gains:
-                # self.ep_initial_gains[gain] = self.loop.run_until_complete(self.sitl.get_param_async(gain))
                 self.ep_initial_gains[gain] = self.sitl.get_param(master, gain)
                 
 
@@ -207,19 +205,18 @@ class ArdupilotEnv(gym.Env):
             self.gazebo.transport_position(self.sitl.name, [self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]], euler_to_quaternion(None))
             self.gazebo.resume_simulation()
 
-            self.send_reset_NEAGL(self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
-        observation, info = self.loop.run_until_complete(self._async_get_observation())
+            self.send_reset(master, self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
+        observation, info = self._get_observation()
         return observation, info  # observation, info
 
-    def send_reset_NEAGL(self, n, e, agl, seq=None, retries=3, ack_timeout=1.5):
-        m = self.sitl._get_mavlink_connection()
+    def send_reset(self, master, n, e, agl, seq=None, retries=3, ack_timeout=1.5):
         CMD = 31010
         if seq is None:
             seq = int(time.time() * 1000) & 0x7FFFFFFF  # monotonic-ish
 
         def tx():
-            m.mav.command_long_send(
-                m.target_system, m.target_component,
+            master.mav.command_long_send(
+                master.target_system, master.target_component,
                 CMD, 0,          # confirmation=0
                 float(n), float(e), float(agl),
                 float(seq), 0, 0, 0
@@ -228,7 +225,7 @@ class ArdupilotEnv(gym.Env):
         def wait_ack():
             t0 = time.time()
             while time.time() - t0 < ack_timeout:
-                msg = m.recv_match(type='COMMAND_ACK', blocking=False)
+                msg = master.recv_match(type='COMMAND_ACK', blocking=False)
                 if msg and int(msg.command) == CMD:
                     return int(msg.result)  # 0 = ACCEPTED
                 time.sleep(0.01)
@@ -242,27 +239,22 @@ class ArdupilotEnv(gym.Env):
             time.sleep(0.1)
         return False
     
-    async def _async_get_observation(self, messages=None):
-        """
-        Get the observations of the environment as a flattened array.
-        This function is called when the environment is reset.
-        Returns flattened observations for Stable Baselines compatibility.
-        """
-
+    def _get_observation(self, messages=None):
 
         # Initialize flattened observation array
         total_dim = len(self.observable_gains) + len(self.observable_states)
         observation = np.zeros(total_dim, dtype=np.float32)
         
+        master = self.sitl._get_mavlink_connection()
+        master.wait_heartbeat()
+        
         # Fill gains first
         for i, observable_gain in enumerate(self.observable_gains):
-            gain_value  = self.sitl.get_param(self.sitl._get_mavlink_connection(), observable_gain)
+            gain_value  = self.sitl.get_param(master, observable_gain)
             observation[i] = gain_value
         
         # Fill states
         if messages is None:
-            master = self.sitl._get_mavlink_connection()
-            hb = master.wait_heartbeat()
             messages = master.messages
         
         for i, observable_state in enumerate(self.observable_states):
@@ -310,40 +302,35 @@ class ArdupilotEnv(gym.Env):
     
     def step(self, action):
         self.episode_step += 1
-        obs, reward, done, truncated, info = self.loop.run_until_complete(self._async_step(action))
+        obs, reward, done, truncated, info = self._step(action)
         return obs, reward, done, truncated, info
 
-    async def _async_step(self, action):
+    def _step(self, action):
         """
         Handle flattened actions for Stable Baselines compatibility.
         Actions are changes to PID parameters that need to be applied.
         """
-        print(self.episode_step)
 
         if len(action) != len(self.action_gains):
             raise ValueError(f"Expected action of length {len(self.action_gains)}, got {len(action)}")
         master = self.sitl._get_mavlink_connection()
+        hb = master.wait_heartbeat()
+
         # Get current gains
         new_gains = {}
         for variable in self.action_gains:
             new_gains[variable] = self.sitl.get_param(master, variable)
-        print("Action received")        
         for i, var in enumerate(self.action_gains):
             new_gains[var] += action[i]
             new_gains[var] = max(new_gains[var], 0)
             self.sitl.set_param_and_confirm(master, var, new_gains[var])
-        print("Actions Send")
-        await self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
-        print("Gazebo Slept")
+        self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
 
         # first get more complete info then construct observation from that        
         master.wait_heartbeat()
         messages = master.messages
-        print("messages reeived ")
-        observation, info = await self._async_get_observation(messages)
-
+        observation, info = self._get_observation(messages)
         terminated, reason = self._check_terminated(messages)
-        
         if terminated:
             truncated = False
             logger.info(f"Terminating the episode {reason}")
@@ -361,7 +348,6 @@ class ArdupilotEnv(gym.Env):
             'stable_time': self.eps_stable_time,
             'max_stable_time': self.max_stable_time,
         }
-
         reward = self._compute_reward(messages, reason)
         for i, var in enumerate(self.action_gains):
             info[var] = new_gains[var]
@@ -441,13 +427,13 @@ class ArdupilotEnv(gym.Env):
             logger.error(f"Failed to takeoff: {ack}")
 
 
-    async def _gazebo_sleep(self, duration):
+    def _gazebo_sleep(self, duration):
         """
         Sleep for the given duration (in seconds) using Gazebo simulation time.
         """
         start_time = self.gazebo.get_sim_time()
         while True:
-            await asyncio.sleep(0.0001)
+            time.sleep(0.001)
             current_time = self.gazebo.get_sim_time()
             if current_time - start_time >= duration:
                 break
