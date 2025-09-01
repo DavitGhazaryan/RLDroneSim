@@ -87,14 +87,6 @@
       <uri>model://iris_with_ardupilot_2</uri>
       <pose degrees="true">0 0 0.195 0 0 90</pose>
       <!-- <enable_wind>true</enable_wind> -->
-
-      <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">
-        <!-- Defaults to /model/iris_with_gimbal/odometry -->
-        <!-- <all>false</all> -->
-        <dimensions>3</dimensions>
-        <update_frequency>50</update_frequency>
-        <xyz_offset>0 0 0</xyz_offset>
-      </plugin>
   
     </include>
 
