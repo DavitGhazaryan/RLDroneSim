@@ -9,6 +9,7 @@ import sys
 import asyncio
 import math
 import time
+from pymavlink import mavutil
 sys.path.insert(0, "/home/student/Dev/pid_rl")
 
 from rl_training.utils.gazebo_interface import GazeboInterface
@@ -160,31 +161,34 @@ class ArdupilotEnv(gym.Env):
             info = self.sitl.get_process_info()
             logger.debug(f"✅ SITL running (PID {info['pid']})")
             self.initialized = True
-            self.loop.run_until_complete(self._async_arm())
-            ## Resetting Ends Here: Drone is Armed
+            time.sleep(5)
+            self.arm_drone(self.sitl._get_mavlink_connection())
 
             ## Setup Mission
-            pose_ned = self.loop.run_until_complete(self.sitl.get_pose_NED_async())
             master = self.sitl._get_mavlink_connection()
+            hb = master.wait_heartbeat()
+            messages = master.messages
+            
             for gain in self.action_gains:
                 # self.ep_initial_gains[gain] = self.loop.run_until_complete(self.sitl.get_param_async(gain))
                 self.ep_initial_gains[gain] = self.sitl.get_param(master, gain)
                 
 
             self.ep_initial_pose = {
-                'x_m': pose_ned.east_m,
-                'y_m': pose_ned.north_m,
-                'z_m': - pose_ned.down_m
+                'x_m': messages["LOCAL_POSITION_NED"].y,
+                'y_m': messages["LOCAL_POSITION_NED"].x,
+                'z_m': - messages["LOCAL_POSITION_NED"].z
             }
-            attitude = self.loop.run_until_complete(self.sitl.get_attitude_async())
+            attitude = messages["ATTITUDE"]
+
             self.ep_initial_attitude = {
-                'pitch_deg': attitude.pitch_deg,
-                'roll_deg': attitude.roll_deg,
-                'yaw_deg': attitude.yaw_deg
+                'pitch_deg': math.degrees(attitude.pitch),
+                'roll_deg': math.degrees(attitude.roll),
+                'yaw_deg': math.degrees(attitude.yaw)
             }
 
-            self._async_mission_function = self._setup_mission()   # same x, y, z
-            self.loop.run_until_complete(self._async_mission_function())
+            self.mission_function = self._setup_mission()   # same x, y, z
+            self.mission_function()
         else:
             logger.info("Resetting the Environment")
             self.ep_initial_pose, self.ep_initial_attitude, self.ep_initial_gains = self.get_random_initial_state()
@@ -245,7 +249,6 @@ class ArdupilotEnv(gym.Env):
         Returns flattened observations for Stable Baselines compatibility.
         """
 
-        drone = await self.sitl._get_mavsdk_connection()
 
         # Initialize flattened observation array
         total_dim = len(self.observable_gains) + len(self.observable_states)
@@ -287,7 +290,7 @@ class ArdupilotEnv(gym.Env):
                 }
                 self.goal_orientation = self.ep_initial_attitude.copy()
 
-                return self._async_takeoff
+                return self.takeoff_drone
             
             case 'position' | 'attitude' | 'stabilize' | 'althold':
                 raise NotImplementedError("Position, attitude, stabilize, and althold modes are not implemented yet")
@@ -315,7 +318,7 @@ class ArdupilotEnv(gym.Env):
         Handle flattened actions for Stable Baselines compatibility.
         Actions are changes to PID parameters that need to be applied.
         """
-        drone = await self.sitl._get_mavsdk_connection()
+        print(self.episode_step)
 
         if len(action) != len(self.action_gains):
             raise ValueError(f"Expected action of length {len(self.action_gains)}, got {len(action)}")
@@ -324,25 +327,22 @@ class ArdupilotEnv(gym.Env):
         new_gains = {}
         for variable in self.action_gains:
             new_gains[variable] = self.sitl.get_param(master, variable)
-        
+        print("Action received")        
         for i, var in enumerate(self.action_gains):
             new_gains[var] += action[i]
             new_gains[var] = max(new_gains[var], 0)
             self.sitl.set_param_and_confirm(master, var, new_gains[var])
-        
+        print("Actions Send")
         await self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
+        print("Gazebo Slept")
 
         # first get more complete info then construct observation from that        
-        master = self.sitl._get_mavlink_connection()
         master.wait_heartbeat()
         messages = master.messages
+        print("messages reeived ")
         observation, info = await self._async_get_observation(messages)
-        
-        ## TODO  remove mavsdk part
-        pose_vel = await anext(drone.telemetry.position_velocity_ned())
-        attitude = await anext(drone.telemetry.attitude_euler())
-                
-        terminated, reason = self._check_terminated(messages, pose_vel, attitude)
+
+        terminated, reason = self._check_terminated(messages)
         
         if terminated:
             truncated = False
@@ -401,28 +401,45 @@ class ArdupilotEnv(gym.Env):
             description[f"action_{i}"] = f"Gain adjustment: {key}"
         return description
 
-    async def _async_arm(self):
-        logger.info("Arming...")
-        drone = await self.sitl._get_mavsdk_connection()
 
-        logger.info("Waiting for vehicle to become armable...")
-        async for health in drone.telemetry.health():
-            if health.is_armable and health.is_global_position_ok:
-                logger.info("Vehicle is armable and has GPS fix!")
+    def arm_drone(self, master, timeout=10):
+        master.wait_heartbeat()
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            hb = master.recv_match(type="HEARTBEAT", blocking=True, timeout=1.0)
+            if not hb:
+                continue
+            if hb.system_status == mavutil.mavlink.MAV_STATE_STANDBY:
                 break
+            time.sleep(0.01)
+        if time.time() - t0 >= timeout:
+            raise TimeoutError("Failed to arm the drone")
+        
+        master.mav.command_long_send(
+            master.target_system, master.target_component,
+                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0
+        )
 
-        await drone.action.arm()
-        await asyncio.sleep(1/self.sitl.speedup)
+        master.recv_match(type='COMMAND_ACK', blocking=True, timeout=10)
 
-    async def _async_takeoff(self):
+    def takeoff_drone(self):
+        master = self.sitl._get_mavlink_connection()
+        master.wait_heartbeat()
+        master.mav.command_long_send(
+            master.target_system,
+            master.target_component,
+            mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+            0,          # confirmation
+            0, 0, 0, 0, # params 1–4 (unused here)
+            0, 0,       # lat, lon (0 = current location)
+            self.takeoff_altitude    # param7 = target altitude (meters, AMSL)
+        )
+        ack = master.recv_match(type='COMMAND_ACK', blocking=True, timeout=10)
+        if ack and ack.result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
+            logger.info(f"Takeoff to {self.takeoff_altitude} m commanded")
+        else:
+            logger.error(f"Failed to takeoff: {ack}")
 
-        drone = await self.sitl._get_mavsdk_connection()
-        await drone.action.set_takeoff_altitude(self.takeoff_altitude)
-        # await asyncio.sleep(3/self.sitl.speedup) 
-        await asyncio.sleep(3) 
-        await drone.action.takeoff()
-        # await asyncio.sleep(7/self.sitl.speedup)
-        await asyncio.sleep(7)
 
     async def _gazebo_sleep(self, duration):
         """
@@ -448,28 +465,27 @@ class ArdupilotEnv(gym.Env):
         in_vicinity = (pos_error_cm <= eps_in and alt_error_cm <= eps_in) 
         return in_vicinity
 
-    def _check_terminated(self, messages, pose_vel, attitude):
-        pose = pose_vel.position
-        vel = pose_vel.velocity
+    def _check_terminated(self, messages):
+        message = messages["LOCAL_POSITION_NED"]
+        attitude = messages["ATTITUDE"]
 
         # 1. Attitude Error
-        if abs(attitude.pitch_deg - self.goal_orientation['pitch_deg']) > 15 or abs(attitude.roll_deg - self.goal_orientation['roll_deg']) > 15:
+        if abs(math.degrees(attitude.pitch) - self.goal_orientation['pitch_deg']) > 15 or abs(math.degrees(attitude.roll) - self.goal_orientation['roll_deg']) > 15:
             return True, Termination.ATTITUDE_ERR
         
         # Velocity magnitude
-        if abs(vel.north_m_s) > 4 or abs(vel.east_m_s) > 4 or abs(vel.down_m_s) > 4:
+        if abs(message.vx) > 4 or abs(message.vy) > 4 or abs(message.vz) > 4:
             return True, Termination.VEL_EXC
         
         # 2. Flip (pitch or roll > 90 deg)
-        if abs(attitude.pitch_deg) > 90 or abs(attitude.roll_deg) > 90:
+        if abs(math.degrees(attitude.pitch)) > 90 or abs(math.degrees(attitude.roll)) > 90:
             return True, Termination.FLIP
         
         # 3. 2x farther from goal than originally
         dist_init = np.linalg.norm(np.array([self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]]) 
                                    - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
-        dist_now = np.linalg.norm(np.array([pose.north_m, pose.east_m, -pose.down_m]) 
+        dist_now = np.linalg.norm(np.array([message.y, message.x, -message.z]) 
                                   - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
-        
         if dist_now > 2.0 * dist_init and dist_now > 0.1:
             return True, Termination.FAR
         

@@ -16,9 +16,6 @@ from pathlib import Path
 
 from pymavlink import mavutil
 
-from mavsdk import System
-
-
 
 logger = logging.getLogger("SITL")  
 
@@ -40,7 +37,6 @@ class ArduPilotSITL:
         else:
             logging.basicConfig(level=logging.ERROR)
         
-
         self.config = config
         self.instance = instance
 
@@ -52,7 +48,6 @@ class ArduPilotSITL:
 
         # cached connections
         self._mavlink_master: Optional[mavutil.mavlink_connection] = None  # Cached low level connection 
-        self._mavsdk_system: Optional[System] = None  # Cached MAVSDK connection
 
         # required
         self.ardupilot_path = Path(config['ardupilot_path'])
@@ -160,7 +155,6 @@ class ArduPilotSITL:
         logger.warn("Param is NOT SET")
         return False
 
-
     # Mode Setting
     def _set_mode_sync(self, mode_name: str, timeout: float = 10.0) -> bool:
         """
@@ -213,12 +207,6 @@ class ArduPilotSITL:
             logger.error(f"Failed to set mode {mode_name}: {e}")
             return False
 
-
-    async def get_param_async(self, param_name: str):
-        drone = await self._get_mavsdk_connection()
-        return await drone.param.get_param_float(param_name)
-
-
     def get_param(self, master, param_name, timeout=3.0, resend_every=0.5):
         # Ensure targets from heartbeat
         hb = master.wait_heartbeat()
@@ -269,16 +257,6 @@ class ArduPilotSITL:
 
         raise TimeoutError(f"Timeout: param {param_name} not received")
 
-    async def get_pose_NED_async(self):
-        drone = await self._get_mavsdk_connection()
-        pose_vel = await anext(drone.telemetry.position_velocity_ned())
-        return pose_vel.position
-    
-
-    async def get_attitude_async(self):
-        drone = await self._get_mavsdk_connection()
-        attitude = await anext(drone.telemetry.attitude_euler())
-        return attitude
     
     def is_running(self) -> bool:
         return bool(self.process and self.process.poll() is None)
@@ -342,10 +320,7 @@ class ArduPilotSITL:
         
         # Close MAVLink connection first
         self._close_mavlink_connection()
-        
-        # Close MAVSDK connection
-        self._close_mavsdk_connection()
-        
+                
         try:
             os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
             self.process.wait(timeout=10)
@@ -576,7 +551,7 @@ class ArduPilotSITL:
             logger.warning(f"Could not track child processes: {e}")
 
     # utils for connections
-    def _get_mavlink_connection(self) -> mavutil.mavlink_connection:
+    def _get_mavlink_connection(self):
         """
         Get or create a cached MAVLink connection.
         
@@ -625,86 +600,6 @@ class ArduPilotSITL:
             except:
                 pass
             self._mavlink_master = None
-
-    async def _get_mavsdk_connection(self) -> System:
-        """
-        Get or create a cached MAVSDK connection using singleton pattern.
-        
-        Returns:
-            System: Active MAVSDK connection
-            
-        Raises:
-            RuntimeError: If connection cannot be established
-        """
-        # If we already have a connection, return it
-        if self._mavsdk_system is not None:
-            logger.debug("Returning existing MAVSDK connection")
-            return self._mavsdk_system
-
-        # Create new connection instance
-        logger.debug("Creating new MAVSDK System instance")
-        if self.instance == 1:
-            p = 50051
-        else:
-            p = 50052
-        self._mavsdk_system = System(port=p)
-        
-        # Build connection address
-        port = self.mavsdk_port
-        address = f"udpin://127.0.0.1:{port}"
-        logger.debug(f"Connecting MAVSDK to {address}")
-
-        try:
-            # Establish connection
-            await self._mavsdk_system.connect(system_address=address)
-            logger.debug(f"Connection initiated to {address}")
-
-            # Wait for connection to be established
-            connected = False
-            start_time = time.time()
-            
-            while time.time() - start_time < self.timeout:
-                try:
-                    # Simple connection state check
-                    state = await asyncio.wait_for(
-                        self._mavsdk_system.core.connection_state().__anext__(),
-                        timeout=1.0
-                    )
-                    
-                    if state.is_connected:
-                        connected = True
-                        logger.debug(f"Successfully connected MAVSDK to {address}")
-                        break
-                        
-                except (asyncio.TimeoutError, StopAsyncIteration):
-                    # Continue waiting
-                    await asyncio.sleep(0.5)
-                    continue
-                except Exception as e:
-                    logger.warning(f"Error checking connection state: {e}")
-                    await asyncio.sleep(0.5)
-                    continue
-            
-            if not connected:
-                # Clean up on failure
-                self._mavsdk_system = None
-                raise RuntimeError(f"Failed to establish connection to {address} within {self.timeout} seconds")
-
-            logger.debug(f"Established MAVSDK connection to {address}")
-            return self._mavsdk_system
-
-        except Exception as e:
-            # Clean up on failure so next call starts fresh
-            logger.error(f"Could not connect MAVSDK to {address}: {e}")
-            self._mavsdk_system = None
-            raise RuntimeError(f"Failed to establish MAVSDK connection to {address}: {e}")
-
-    def _close_mavsdk_connection(self):
-        """Close and cleanup cached MAVSDK connection."""
-        if self._mavsdk_system is not None:
-            # Note: MAVSDK doesn't have an explicit disconnect method,
-            # the connection will be cleaned up when the object is destroyed
-            self._mavsdk_system = None
 
     # Closing and Cleanup
     def close(self):
