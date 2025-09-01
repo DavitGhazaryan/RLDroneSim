@@ -13,7 +13,7 @@ environment_config:
   observable_states: "alt_err+vZ_err+accZ_err" # Which states to observe
   action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"      # Which PID gains to adjust
   reward_config: "hover"       
-  action_dt: 0.1                 # Time interval between action and observation
+  action_dt: 1.0                 # Time interval between action and observation
   takeoff_altitude: 5.0          #  meters
   verbose: true                  # controls custom logging not internal
   # normalize_observations: true   # Whether to normalize observations
@@ -98,7 +98,7 @@ ardupilot_config:
   ideal_sensors: true                          # Use ideal sensor models
   count: null                                  # Number of vehicle instances
   location: null                               # Home location: [lat, lon, alt, yaw]
-  speedup: 7                                   # Simulation speed multiplier
+  speedup: 5                                   # Simulation speed multiplier
   wipe_eeprom: true                            # Clear EEPROM on startup
   use_dir: null                                # Custom directory for SITL
   delay_start: null                            # Startup delay in seconds

@@ -91,8 +91,8 @@ class ArduPilotSITL:
         if self.is_running():
             raise RuntimeError("SITL already running")
         cmd = self._build_command()
-        logger.debug(f"Launching SITL")
-        logger.debug(f"{cmd}")
+        #logger.debug(f"Launching SITL")
+        #logger.debug(f"{cmd}")
 
         self.process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -103,16 +103,16 @@ class ArduPilotSITL:
         self._wait_for_startup()      # ensures that the process is running and the port(s) are available
         self._track_child_processes()
 
-        logger.debug("Establishing connections...")
+        #logger.debug("Establishing connections...")
         self._get_mavlink_connection()
-        logger.debug("MAVLink connection established")
+        #logger.debug("MAVLink connection established")
 
         try:
             self._set_mode_sync('GUIDED')
         except Exception as e:
             logger.warning(f"Error setting GUIDED mode after startup: {e}")
 
-        logger.debug("SITL started successfully.")
+        #logger.debug("SITL started successfully.")
 
     def set_message_interval(self, master, msg_id, hz):
         # master = self._get_mavlink_connection()
@@ -166,7 +166,7 @@ class ArduPilotSITL:
                 return False
 
             mode_id = mapping[mode_name]
-            logger.debug(f"Setting mode {mode_name} (ID: {mode_id})")
+            #logger.debug(f"Setting mode {mode_name} (ID: {mode_id})")
             
             # Send the mode change
             master.mav.set_mode_send(
@@ -184,7 +184,7 @@ class ArduPilotSITL:
                 # Non-blocking read
                 msg = master.recv_match(type='HEARTBEAT', blocking=False, timeout=0.1)
                 if msg and msg.custom_mode == mode_id:
-                    logger.debug(f"Mode change to {mode_name} confirmed")
+                    #logger.debug(f"Mode change to {mode_name} confirmed")
                     return True
                     
                 time.sleep(0.1)
@@ -275,7 +275,7 @@ class ArduPilotSITL:
     def stop_sitl(self):
         if not self.is_running():
             return
-        logger.debug("Stopping SITL...")
+        #logger.debug("Stopping SITL...")
         
         # Close MAVLink connection first
         self._close_mavlink_connection()
@@ -307,12 +307,13 @@ class ArduPilotSITL:
                         if thread.is_alive():
                             logger.warning(f"Log thread {thread.name} did not terminate gracefully")
                     except Exception as e:
-                        logger.debug(f"Error joining log thread: {e}")
+                        #logger.debug(f"Error joining log thread: {e}")
+                        pass
             self.log_threads.clear()
         
         self.process = None
         self.child_processes.clear()
-        logger.debug("SITL stopped.")
+        #logger.debug("SITL stopped.")
 
     # utils for the SITL
     def _validate_paths(self):
@@ -320,7 +321,7 @@ class ArduPilotSITL:
             raise FileNotFoundError(f"ArduPilot path not found: {self.ardupilot_path}")
         if not self.sim_vehicle_script.exists():
             raise FileNotFoundError(f"sim_vehicle.py not found: {self.sim_vehicle_script}")
-        logger.debug(f"Using sim_vehicle.py: {self.sim_vehicle_script}")
+        #logger.debug(f"Using sim_vehicle.py: {self.sim_vehicle_script}")
 
     def _load_default_params(self) -> Dict[str, float]:
         # Map vehicle types to their parameter file names
@@ -352,7 +353,7 @@ class ArduPilotSITL:
                         defaults[parts[0]] = float(parts[1])
                     except ValueError:
                         pass
-        logger.debug(f"Loaded {len(defaults)} default params from {path}")
+        #logger.debug(f"Loaded {len(defaults)} default params from {path}")
         return defaults
 
     def _build_command(self) -> List[str]:
@@ -423,8 +424,8 @@ class ArduPilotSITL:
         """
         Wait for SITL to initialize by checking both process health and port availability.
         """
-        logger.debug("Waiting for SITL to initialize...")
-        logger.debug("   ")
+        #logger.debug("Waiting for SITL to initialize...")
+        #logger.debug("   ")
         
         start = time.time()
 
@@ -433,7 +434,7 @@ class ArduPilotSITL:
                 out, err = self.process.communicate(timeout=1)
                 raise RuntimeError(f"SITL crashed during startup:\n{err.decode()}\n{out.decode()}")
             time.sleep(0.5)
-        logger.debug(f"Minimum startup delay of {self.min_startup_delay}s completed")
+        #logger.debug(f"Minimum startup delay of {self.min_startup_delay}s completed")
         
         
         # Wait for the ports to become available
@@ -448,13 +449,13 @@ class ArduPilotSITL:
         
     def _wait_for_ports(self) -> bool:
 
-        logger.debug("   ")
-        logger.debug(f"Waiting for Master port {self.master_port} to become available...")
+        #logger.debug("   ")
+        #logger.debug(f"Waiting for Master port {self.master_port} to become available...")
         ports_available = False
         start_time = time.time()
         while time.time() - start_time < self.port_check_timeout:
             if self._check_port_available(port=self.master_port):
-                logger.debug(f"Master port {self.master_port} is now available")
+                #logger.debug(f"Master port {self.master_port} is now available")
                 ports_available = True
                 break
             time.sleep(0.5)
@@ -462,12 +463,12 @@ class ArduPilotSITL:
             logger.error(f"Master port {self.master_port} did not become available within {self.port_check_timeout}s")
             return False
 
-        logger.debug(f"Waiting for MAVSDK port {self.mavsdk_port} to become available...")
+        #logger.debug(f"Waiting for MAVSDK port {self.mavsdk_port} to become available...")
         ports_available = False
         start_time = time.time()
         while time.time() - start_time < self.port_check_timeout:
             if self._check_port_available(port=self.mavsdk_port):
-                logger.debug(f"MAVSDK port {self.mavsdk_port} is now available")
+                #logger.debug(f"MAVSDK port {self.mavsdk_port} is now available")
                 ports_available = True
                 break
             time.sleep(0.5)
@@ -505,7 +506,7 @@ class ArduPilotSITL:
         try:
             parent = psutil.Process(self.process.pid)
             self.child_processes = [c.pid for c in parent.children(recursive=True)]
-            logger.debug(f"Tracked {len(self.child_processes)} child processes")
+            #logger.debug(f"Tracked {len(self.child_processes)} child processes")
         except Exception as e:
             logger.warning(f"Could not track child processes: {e}")
 
@@ -530,7 +531,7 @@ class ArduPilotSITL:
                 self._mavlink_master.target_system = hb.get_srcSystem()
 
                 self._mavlink_master.target_component = hb.get_srcComponent() or mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
-                logger.debug(f"HB from sys:{self._mavlink_master.target_system} comp:{self._mavlink_master.target_component}")
+                #logger.debug(f"HB from sys:{self._mavlink_master.target_system} comp:{self._mavlink_master.target_component}")
 
                 # channels
                 PID_TUNING = 194
@@ -544,7 +545,7 @@ class ArduPilotSITL:
                 self.set_param_and_confirm(self._mavlink_master, "GCS_PID_MASK", GCS_PID_MASK_VALUE)
 
                 print(f"Established MAVLink connection to {addr}")
-                logger.debug(f"Established MAVLink connection to {addr}")
+                #logger.debug(f"Established MAVLink connection to {addr}")
             except Exception as e:
                 self._mavlink_master = None
                 raise RuntimeError(f"Failed to establish MAVLink connection to {addr}: {e}")
@@ -570,7 +571,7 @@ class ArduPilotSITL:
 
     def _cleanup_on_exit(self):
         if self.is_running():
-            logger.debug("Cleanup on exit: stopping SITL")
+            #logger.debug("Cleanup on exit: stopping SITL")
             self.stop_sitl()
         
         # Shutdown thread executor

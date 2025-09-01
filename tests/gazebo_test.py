@@ -1,25 +1,32 @@
 #!/usr/bin/env python3
-# Pause/resume Gazebo Harmonic via gz-transport service
-# Usage: python3 world_ctrl.py simple_world pause|resume
-
-import sys
+import threading, time
 from gz.transport13 import Node
-from gz.msgs10.world_control_pb2 import WorldControl
-from gz.msgs10.boolean_pb2 import Boolean
+from gz.msgs10.clock_pb2 import Clock as ClockMsg
+from gz.msgs10.world_stats_pb2 import WorldStatistics
 
-def world_control(world: str, pause_flag: bool) -> None:
-    svc = f"/world/{world}/control"
+sim_time = 0.0
+event = threading.Event()
+
+def on_clock(msg: WorldStatistics):
+    global sim_time
+    sim_time = int(msg.sim.sec) + int(msg.sim.nsec) * 1e-9
+    if not event.is_set():
+        event.set()
+
+def main():
     node = Node()
+    topic = "/world/simple_world/clock"   # replace with your world name
+    sub = node.subscribe(topic, ClockMsg, on_clock)
 
-    req = WorldControl()
-    req.pause = pause_flag              # True=pause, False=run
+    # wait until we get at least one clock message
+    if not event.wait(1.0):
+        print("No clock message received within 1s")
+        return
 
-    ok, rep = node.request(svc, req, WorldControl,  Boolean, timeout=3000)
-    if not ok:
-        raise RuntimeError(f"Service call failed: {svc}")
+    # now print sim time every second
+    while True:
+        print(f"Sim time: {sim_time:.6f} s")
+        time.sleep(1)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3 or sys.argv[2] not in ("pause","resume"):
-        print("Usage: python3 world_ctrl.py <world> pause|resume"); sys.exit(1)
-    world_control(sys.argv[1], pause_flag=(sys.argv[2]=="pause"))
-    print("Done.")
+    main()

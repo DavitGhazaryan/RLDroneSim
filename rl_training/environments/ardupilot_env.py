@@ -78,17 +78,17 @@ class ArdupilotEnv(gym.Env):
         self.action_space = self._define_action_space()
 
         # Log space information for debugging
-        logger.info(f"🔧 Environment spaces initialized:")
-        logger.info(f"   Observation space: {self.observation_space}")
-        logger.info(f"   Action space: {self.action_space}")
-        logger.info(f"   Observable gains: {self.observable_gains}")
-        logger.info(f"   Observable states: {self.observable_states}")
-        logger.info(f"   Action gains: {self.action_gains}")
+        #logger.info(f"🔧 Environment spaces initialized:")
+        #logger.info(f"   Observation space: {self.observation_space}")
+        #logger.info(f"   Action space: {self.action_space}")
+        #logger.info(f"   Observable gains: {self.observable_gains}")
+        #logger.info(f"   Observable states: {self.observable_states}")
+        #logger.info(f"   Action gains: {self.action_gains}")
         
         obs_mapping = self.get_observation_key_mapping()
         action_mapping = self.get_action_key_mapping()
-        logger.info(f"   Observation mapping: {obs_mapping}")
-        logger.info(f"   Action mapping: {action_mapping}")
+        #logger.info(f"   Observation mapping: {obs_mapping}")
+        #logger.info(f"   Action mapping: {action_mapping}")
         
     def _define_observation_space(self):
         """
@@ -149,21 +149,22 @@ class ArdupilotEnv(gym.Env):
         self.episode_step = 0
 
         if not self.initialized:
-            logger.info("🌎 Launching Gazebo simulation...")
+            #logger.info("🌎 Launching Gazebo simulation...")
             self.gazebo.start_simulation()
             self.gazebo._wait_for_startup()
             self.gazebo.resume_simulation()
-            logger.debug("✅ Gazebo initialized")
-            logger.debug("🚁 Starting ArduPilot SITL...")
+            #logger.debug("✅ Gazebo initialized")
+            #logger.debug("🚁 Starting ArduPilot SITL...")
             self.sitl.start_sitl()
             info = self.sitl.get_process_info()
-            logger.debug(f"✅ SITL running (PID {info['pid']})")
+            #logger.debug(f"✅ SITL running (PID {info['pid']})")
             self.initialized = True
             time.sleep(5)
 
             ## Setup Mission
             master = self.sitl._get_mavlink_connection()  
             self.arm_drone(master)
+            time.sleep(5)
 
             hb = master.wait_heartbeat()
             messages = master.messages
@@ -188,7 +189,7 @@ class ArdupilotEnv(gym.Env):
             self.mission_function = self._setup_mission()   # same x, y, z
             self.mission_function()
         else:
-            logger.info("Resetting the Environment")
+            #logger.info("Resetting the Environment")
             self.ep_initial_pose, self.ep_initial_attitude, self.ep_initial_gains = self.get_random_initial_state()
             self.eps_stable_time = 0
             self.max_stable_time = 0
@@ -204,8 +205,9 @@ class ArdupilotEnv(gym.Env):
             self.gazebo.pause_simulation()
             self.gazebo.transport_position(self.sitl.name, [self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]], euler_to_quaternion(None))
             self.gazebo.resume_simulation()
-
+            print("resumed")
             self.send_reset(master, self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
+            print("reseted")
         observation, info = self._get_observation()
         return observation, info  # observation, info
 
@@ -333,12 +335,13 @@ class ArdupilotEnv(gym.Env):
         terminated, reason = self._check_terminated(messages)
         if terminated:
             truncated = False
-            logger.info(f"Terminating the episode {reason}")
+            #logger.info(f"Terminating the episode {reason}")
         else:
             terminated = False
             truncated = self.episode_step >= self.max_episode_steps
             if truncated:
-                logger.info(f"Truncating the Episode")
+                pass
+                #logger.info(f"Truncating the Episode")
 
         
         # Create proper info dictionary
@@ -422,7 +425,8 @@ class ArdupilotEnv(gym.Env):
         )
         ack = master.recv_match(type='COMMAND_ACK', blocking=True, timeout=10)
         if ack and ack.result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
-            logger.info(f"Takeoff to {self.takeoff_altitude} m commanded")
+            #logger.info(f"Takeoff to {self.takeoff_altitude} m commanded")
+            pass
         else:
             logger.error(f"Failed to takeoff: {ack}")
 
@@ -431,11 +435,15 @@ class ArdupilotEnv(gym.Env):
         """
         Sleep for the given duration (in seconds) using Gazebo simulation time.
         """
+        # print("That !!!!")
+        # print(self.gazebo.get_sim_time_from_state())
         start_time = self.gazebo.get_sim_time()
+        print(start_time)
         while True:
             time.sleep(0.001)
             current_time = self.gazebo.get_sim_time()
             if current_time - start_time >= duration:
+                print(current_time)
                 break
 
     def _check_vicinity_status(self, pos_error_cm, alt_error_cm):
@@ -582,7 +590,7 @@ class ArdupilotEnv(gym.Env):
         
     def close(self):
         """Clean up resources."""
-        logger.info("Closing environment...")
+        #logger.info("Closing environment...")
         self.gazebo.close()
         self.sitl.close()
 

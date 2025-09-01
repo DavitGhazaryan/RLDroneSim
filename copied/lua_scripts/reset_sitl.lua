@@ -31,7 +31,12 @@ local function do_reset(n_m, e_m, agl_m)
   if not capture_origin_once() then return end
   local tgt = target_from_offsets(n_m, e_m, agl_m)
   if ahrs.reset then ahrs:reset() end
-  sim:set_pose(0, tgt, Quaternion(), ZERO, ZERO)
+
+  local q = Quaternion()
+  q:from_euler(0, 0, 0)
+  gcs:send_text(0, string.format("pose lat=%.7f lon=%.7f alt_cm=%d", tgt:lat()/1e7, tgt:lng()/1e7, tgt:alt()))
+
+  sim:set_pose(0, tgt, q, ZERO, ZERO)
 
 end
 

@@ -7,15 +7,19 @@ import xml.etree.ElementTree as ET
 import json
 from typing import Dict, Any
 import threading
+
 from gz.transport13 import Node
 from gz.msgs10.world_control_pb2 import WorldControl
 from gz.msgs10.boolean_pb2 import Boolean
+from gz.msgs10.pose_pb2 import Pose
+from gz.msgs10.clock_pb2 import Clock
+from gz.msgs10.world_stats_pb2 import WorldStatistics
+
 
 
 
 
 logger = logging.getLogger("GazeboInterface")
-# logger.setLevel(logging.INFO)  # Default level; can be overridden in your experiment runner
 
 
 class GazeboInterface:
@@ -41,8 +45,9 @@ class GazeboInterface:
             os.environ["GZ_PARTITION"] = "gz_i0"
       
         self.node = Node()
+        self.clock_node = Node()
    
-        logger.info(f"SDF file: {self.sdf_file}")
+        #logger.info(f"SDF file: {self.sdf_file}")
         self.world_name = self._parse_world_name(self.sdf_file)
 
         if self.sdf_file and not os.path.exists(self.sdf_file):
@@ -54,12 +59,14 @@ class GazeboInterface:
         # for time synchronization 
         self.sim_time = 0.0
         self._timer_lock = threading.Lock()
+        self._clock_event = threading.Event()
+        self._clock_sub = self.clock_node.subscribe(WorldStatistics, f"/world/{self.world_name}/stats", self._on_clock)
 
     def start_simulation(self):
         if self.is_running():
             raise RuntimeError("Gazebo simulation already running")
         
-        logger.debug("Starting Gazebo simulation...")
+        # logger.debug("Starting Gazebo simulation...")
         
         cmd = ['gz', 'sim']
         if not self.gui:
@@ -69,7 +76,7 @@ class GazeboInterface:
         if self.int_verbose:
             cmd.append('-v 4')
         
-        logger.debug(f"Command: {' '.join(cmd)}")
+        # logger.debug(f"Command: {' '.join(cmd)}")
         
         try:
             self.process = subprocess.Popen(
@@ -81,11 +88,9 @@ class GazeboInterface:
             
             self._wait_for_startup()
             self.is_started = True
-            logger.debug("Gazebo simulation started successfully!")
+            #logger.debug("Gazebo simulation started successfully!")
 
-            self._timer_thread = threading.Thread(target=self._timer_thread, daemon=True)
-            self._timer_thread.start()
-            logger.debug("Timer thread started")
+            #logger.debug("Timer thread started")
         except FileNotFoundError:
             logger.error("gz command not found. Please install Gazebo Harmonic or newer.")
             raise
@@ -95,35 +100,23 @@ class GazeboInterface:
     
     def is_running(self):
         return self.process is not None and self.process.poll() is None
+    
+    def transport_position(self, name, position, orientation, timeout_ms=1000, retries=2):
 
-    def transport_position(self, name, position, orientation):
-        try:
-            command = f"gz service -s /world/{self.world_name}/set_pose --reqtype gz.msgs.Pose --reptype gz.msgs.Boolean --timeout 300 --req 'name: {name}, position: {{x: {position[0]}, y: {position[1]}, z: {position[2]}}}, orientation: {{x: {orientation[0]}, y: {orientation[1]}, z: {orientation[2]}, w: {orientation[3]}}}'"
-            logger.debug(f"Command: {command}")
-            subprocess.run(
-                [
-                    "gz", "service",
-                    "-s", f"/world/{self.world_name}/set_pose",
-                    "--reqtype", "gz.msgs.Pose",
-                    "--reptype", "gz.msgs.Boolean",
-                    "--timeout", "300",
-                    "--req", f"name: '{name}', position: {{x: {position[0]}, y: {position[1]}, z: {position[2]}}}, orientation: {{x: {orientation[0]}, y: {orientation[1]}, z: {orientation[2]}, w: {orientation[3]}}}"
-                ],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            logger.debug("✅ Drone transport successful.")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"❌ Drone transport failed: {e.stderr.decode()}")
-            raise RuntimeError("Gazebo transport service failed.")
- 
+        svc = f"/world/{self.world_name}/set_pose"
+        pose = Pose()
+        pose.name = str(name)
+        pose.position.x, pose.position.y, pose.position.z = map(float, position)
+        pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = map(float, orientation)
+
+        for _ in range(max(1, retries)):
+            ok, rep = self.node.request(svc, pose, Pose, Boolean, timeout_ms)  # (service, request, response_type, timeout_ms)
+            if ok and getattr(rep, "data", False):
+                return True
+        raise RuntimeError(f"set_pose failed on {svc} (partition={getattr(self,'partition', None)})")
+    
     def pause_simulation(self):
-        # if self.instance == 2:
-        #     os.environ["GZ_PARTITION"] = "gz_i1"
-        # else:
-        #     os.environ["GZ_PARTITION"] = "gz_i0"
-        logger.debug(f"⏸️  Pausing simulation in world: {self.world_name}")
+        #logger.debug(f"⏸️  Pausing simulation in world: {self.world_name}")
         svc = f"/world/{self.world_name}/control"
         req = WorldControl()
         req.pause = True                # True=pause, False=run
@@ -132,71 +125,36 @@ class GazeboInterface:
             raise RuntimeError(f"Service call failed: {svc}")
 
     def resume_simulation(self):
-        # if self.instance == 2:
-        #     os.environ["GZ_PARTITION"] = "gz_i1"
-        # else:
-        #     os.environ["GZ_PARTITION"] = "gz_i0"
-        logger.debug(f"⏸️  Pausing simulation in world: {self.world_name}")
         svc = f"/world/{self.world_name}/control"
         req = WorldControl()
         req.pause = False                   # True=pause, False=run
         ok, rep = self.node.request(svc, req, WorldControl,  Boolean, timeout=2000)
         if not ok:
             raise RuntimeError(f"Service call failed: {svc}")
+        # SOLUTION 1: Use world state service to get simulation time
+    
 
-    # def pause_simulation(self):
-    #     logger.debug(f"⏸️  Pausing simulation in world: {self.world_name}")
-    #     try:
-    #         subprocess.run(
-    #             [
-    #                 "gz", "service",
-    #                 "-s", f"/world/{self.world_name}/control",
-    #                 "--reqtype", "gz.msgs.WorldControl",
-    #                 "--reptype", "gz.msgs.Boolean",
-    #                 "--timeout", "3000",
-    #                 "--req", "pause: true"
-    #             ],
-    #             check=True,
-    #             stdout=subprocess.PIPE,
-    #             stderr=subprocess.PIPE
-    #         )
-    #         logger.debug("✅ Simulation paused.")
-    #     except subprocess.CalledProcessError as e:
-    #         logger.error(f"❌ Failed to pause simulation: {e.stderr.decode()}")
-    #         raise RuntimeError("Gazebo pause service failed.")
-
-    # def resume_simulation(self):
-    #     logger.debug(f"▶️  Resuming simulation in world: {self.world_name}")
-    #     try:
-    #         subprocess.run(
-    #             [
-    #                 "gz", "service",
-    #                 "-s", f"/world/{self.world_name}/control",
-    #                 "--reqtype", "gz.msgs.WorldControl",
-    #                 "--reptype", "gz.msgs.Boolean",
-    #                 "--timeout", "3000",
-    #                 "--req", "pause: false"
-    #             ],
-    #             check=True,
-    #             stdout=subprocess.PIPE,
-    #             stderr=subprocess.PIPE
-    #         )
-    #         logger.debug("✅ Simulation resumed.")
-    #     except subprocess.CalledProcessError as e:
-    #         logger.error(f"❌ Failed to resume simulation: {e.stderr.decode()}")
-    #         raise RuntimeError("Gazebo resume service failed.")
-   
-    def get_sim_time(self):
-        """
-        Called from the environment to get the simulation time.
-        """
+    
+    def get_sim_time(self, wait_ms=1000):
+        if not self._clock_event.is_set():
+            self._clock_event.wait(wait_ms / 1000.0)
         with self._timer_lock:
-            return self.sim_time
+            return float(self.sim_time)
+        
+
+
+    def _on_clock(self, msg: WorldStatistics):
+        t = int(msg.sim_time.sec) + int(msg.sim_time.nsec) * 1e-9
+        with self._timer_lock:
+            self.sim_time = t
+        if not self._clock_event.is_set():
+            self._clock_event.set()
+
 
     def close(self):
         if self.process is None:
             return
-        logger.debug("Stopping Gazebo simulation...")
+        #logger.debug("Stopping Gazebo simulation...")
         
         try:
             if self.process.poll() is None:
@@ -214,10 +172,8 @@ class GazeboInterface:
         
         self.process = None
         self.is_started = False
-        self._timer_thread.join(timeout=1)
-        logger.debug("Gazebo simulation stopped.")
-    
-    # Private methods
+        #logger.debug("Gazebo simulation stopped.")
+
     def _parse_world_name(self, sdf_path: str) -> str:
         try:
             tree = ET.parse(sdf_path)
@@ -225,35 +181,15 @@ class GazeboInterface:
             for world in root.iter("world"):
                 name = world.attrib.get("name")
                 if name:
-                    logger.debug(f"Parsed world name: {name}")
+                    #logger.debug(f"Parsed world name: {name}")
                     return name
             raise ValueError("No <world> tag with name attribute found in SDF.")
         except Exception as e:
             logger.error(f"Failed to parse world name from SDF: {e}")
             raise RuntimeError(f"Failed to parse SDF world name: {e}")
 
-    def _timer_thread(self):
-        proc = subprocess.Popen(
-            ["gz", "topic", "-e", "--topic", "/clock", "--json-output"],
-            stdout=subprocess.PIPE,
-            text=True
-        )
-        for line in proc.stdout:
-            if not self.is_running():
-                logger.debug("Gazebo is not running, stopping timer thread")
-                break
-            try:
-                msg = json.loads(line)
-                sec = msg["system"]["sec"]
-                nsec = msg["system"]["nsec"]
-                t = int(sec) + int(nsec)     * 1e-9
-                with self._timer_lock:
-                    self.sim_time = t
-            except json.JSONDecodeError:
-                continue
-
     def _wait_for_startup(self):
-        logger.debug("Waiting for Gazebo to initialize...")
+        #logger.debug("Waiting for Gazebo to initialize...")
         start_time = time.time()
 
         while time.time() - start_time < 10:    # timeout = 10
@@ -263,7 +199,7 @@ class GazeboInterface:
             try:
                 result = subprocess.check_output(["gz", "topic", "--list"])
                 if b"/world/" in result:
-                    logger.debug("Gazebo is responding.")
+                    #logger.debug("Gazebo is responding.")
                     return
             except subprocess.CalledProcessError:
                 pass
