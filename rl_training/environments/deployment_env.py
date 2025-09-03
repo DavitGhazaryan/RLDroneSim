@@ -25,19 +25,13 @@ class Termination(Enum):
     SUCCESS = auto()        # task completed successfully         
 
 class ArdupilotEnv(gym.Env):
-    """
-    Initializes Gazebo and Ardupilot SITL, and provides a Gymnasium-compatible interface.
-    Environment is intended to enable training if an RL agent that will find the optimal PID gains to put on an agent.  
-    """
-    
+
     def __init__(self, config, eval=False, instance=1):
         super().__init__()
-        self.np_random, _ = seeding.np_random(None)  # init
-
+        self.np_random, _ = seeding.np_random(None)
         self.eval = eval
 
         self.config = config.get('environment_config', {})
-        self.max_episode_steps = self.config.get('max_episode_steps')
         self.mode = self.config.get('mode')
         self.observable_gains = self.config['observable_gains'].split('+')
         self.observable_states = self.config['observable_states'].split('+')
@@ -55,7 +49,6 @@ class ArdupilotEnv(gym.Env):
         else:
             logger.setLevel(logging.ERROR)
 
-        self.gazebo = GazeboInterface(config['gazebo_config'], instance, self.verbose)
         self.sitl = ArduPilotSITL(config['ardupilot_config'], instance, self.verbose)
 
         # Episode tracking
@@ -146,101 +139,43 @@ class ArdupilotEnv(gym.Env):
             self.action_space.seed(seed)
         if hasattr(self.observation_space, "seed"):
             self.observation_space.seed(seed)
-        self.episode_step = 0
-
-        if not self.initialized:
-            #logger.info("🌎 Launching Gazebo simulation...")
-            self.gazebo.start_simulation()
-            self.gazebo._wait_for_startup()
-            self.gazebo.resume_simulation()
-            #logger.debug("✅ Gazebo initialized")
-            #logger.debug("🚁 Starting ArduPilot SITL...")
-            self.sitl.start_sitl()
-            info = self.sitl.get_process_info()
-            #logger.debug(f"✅ SITL running (PID {info['pid']})")
-            self.initialized = True
-            time.sleep(5)
-
-            ## Setup Mission
-            master = self.sitl._get_mavlink_connection()  
-            self.arm_drone(master)
-            time.sleep(5)
-
-            hb = master.wait_heartbeat()
-            messages = master.messages
-    
-            for gain in self.action_gains:
-                self.ep_initial_gains[gain] = self.sitl.get_param(master, gain)
-                
-
-            self.ep_initial_pose = {
-                'x_m': messages["LOCAL_POSITION_NED"].y,
-                'y_m': messages["LOCAL_POSITION_NED"].x,
-                'z_m': - messages["LOCAL_POSITION_NED"].z
-            }
-            attitude = messages["ATTITUDE"]
-
-            self.ep_initial_attitude = {
-                'pitch_deg': math.degrees(attitude.pitch),
-                'roll_deg': math.degrees(attitude.roll),
-                'yaw_deg': math.degrees(attitude.yaw)
-            }
-
-            self.mission_function = self._setup_mission()   # same x, y, z
-            self.mission_function()
-        else:
-            #logger.info("Resetting the Environment")
-            self.ep_initial_pose, self.ep_initial_attitude, self.ep_initial_gains = self.get_random_initial_state()
-            self.eps_stable_time = 0
-            self.max_stable_time = 0
-            self.accumulated_huber_error = 0.0
-
-            logger.info(f"Setting gains to {self.ep_initial_gains}")
-            master = self.sitl._get_mavlink_connection()
-            for gain in self.action_gains:
-                self.sitl.set_param_and_confirm(master, gain, self.ep_initial_gains[gain])
-
-            logger.info(f"Setting drone to {self.ep_initial_pose}")
-            
-            self.gazebo.pause_simulation()
-            self.gazebo.transport_position(self.sitl.name, [self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]], euler_to_quaternion(None))
-            self.gazebo.resume_simulation()
-            print(self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
-            self.send_reset(master, self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
         
+        self.episode_step = 0
+        self.eps_stable_time = 0
+        self.max_stable_time = 0
+        self.accumulated_huber_error = 0.0
+
+        master = self.sitl._get_mavlink_connection()  
+        time.sleep(2)
+
+        hb = master.wait_heartbeat()
+        messages = master.messages
+
+        for gain in self.action_gains:
+            self.ep_initial_gains[gain] = self.sitl.get_param(master, gain)
+            
+        self.ep_initial_pose = {
+            'x_m': messages["LOCAL_POSITION_NED"].y,
+            'y_m': messages["LOCAL_POSITION_NED"].x,
+            'z_m': - messages["LOCAL_POSITION_NED"].z
+        }
+        
+        attitude = messages["ATTITUDE"]
+        
+        self.ep_initial_attitude = {
+            'pitch_deg': math.degrees(attitude.pitch),
+            'roll_deg': math.degrees(attitude.roll),
+            'yaw_deg': math.degrees(attitude.yaw)
+        }
+        if not self.initialized:
+            self.mission_function = self._setup_mission()   # same x, y, z
+            # self.mission_function()   # No need
+            self.initialized = True
+
         self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
+
         observation, info = self._get_observation()
         return observation, info  # observation, info
-
-    def send_reset(self, master, n, e, agl, seq=None, retries=3, ack_timeout=1.5):
-        CMD = 31010
-        if seq is None:
-            seq = int(time.time() * 1000) & 0x7FFFFFFF  # monotonic-ish
-
-        def tx():
-            master.mav.command_long_send(
-                master.target_system, master.target_component,
-                CMD, 0,          # confirmation=0
-                float(n), float(e), float(agl),
-                float(seq), 0, 0, 0
-            )
-
-        def wait_ack():
-            t0 = time.time()
-            while time.time() - t0 < ack_timeout:
-                msg = master.recv_match(type='COMMAND_ACK', blocking=False)
-                if msg and int(msg.command) == CMD:
-                    return int(msg.result)  # 0 = ACCEPTED
-                time.sleep(0.01)
-            return None
-
-        for _ in range(retries):
-            tx()
-            res = wait_ack()
-            if res == 0:  # ACCEPTED
-                return True
-            time.sleep(0.1)
-        return False
     
     def _get_observation(self, messages=None):
 
@@ -292,17 +227,6 @@ class ArdupilotEnv(gym.Env):
             case _:
                 raise ValueError(f"Invalid mode: {self.mode}")
 
-    def get_random_initial_state(self):
-        initial_gains = {}
-        for gain in self.action_gains:
-            # initial_gains[gain] = self.np_random.uniform(0.8, 5.2)
-            initial_gains[gain] = max(self.ep_initial_gains[gain] + self.np_random.uniform(-3.0, 3.0), 0) if not self.eval else self.ep_initial_gains[gain]
-        return {
-            'x_m': self.goal_pose['x_m'],
-            'y_m': self.goal_pose['y_m'],    
-            'z_m': max(self.goal_pose['z_m']+ self.np_random.uniform(-2.0, 2.0), 0.3) 
-        }, self.ep_initial_attitude, initial_gains
-    
     def step(self, action):
         self.episode_step += 1
         print("new step")
@@ -328,6 +252,7 @@ class ArdupilotEnv(gym.Env):
             new_gains[var] += action[i]
             new_gains[var] = max(new_gains[var], 0)
             self.sitl.set_param_and_confirm(master, var, new_gains[var])
+        
         self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
 
         # first get more complete info then construct observation from that        
@@ -345,7 +270,6 @@ class ArdupilotEnv(gym.Env):
                 pass
                 #logger.info(f"Truncating the Episode")
 
-        
         # Create proper info dictionary
         info = {
             'reason': reason,
