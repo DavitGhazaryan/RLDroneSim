@@ -109,6 +109,22 @@ Meanwhile, after creating the container you may need to rebuild the ArduCopter m
    ./waf copter
    ```
 
+Also, you may need to correct the version of the protobuf.
+   ```bash
+   pip uninstall mavsdk
+   python3 -m pip uninstall -y protobuf
+   sudo apt-get update
+   sudo apt-get install -y python3-protobuf
+   ```
+
+Also, new cpp code was added under clock_node, you may need to build it. 
+   ```bash
+   cd clock_node
+   mkdir -p build && cd build
+   cmake -DCMAKE_BUILD_TYPE=Release ..
+   make -j
+   ```
+For now you need to set the GZ_PARTITION env variable in the terminal where you run the node.
 
 ### Verification Tests
 

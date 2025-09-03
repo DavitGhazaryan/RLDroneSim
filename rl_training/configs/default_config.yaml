@@ -15,7 +15,7 @@ environment_config:
   reward_config: "hover"       
   action_dt: 1.0                 # Time interval between action and observation
   takeoff_altitude: 5.0          #  meters
-  verbose: true                  # controls custom logging not internal
+  verbose: false                  # controls custom logging not internal
   # normalize_observations: true   # Whether to normalize observations
   # normalize_actions: false       # Whether to normalize actions
 
@@ -98,7 +98,7 @@ ardupilot_config:
   ideal_sensors: true                          # Use ideal sensor models
   count: null                                  # Number of vehicle instances
   location: null                               # Home location: [lat, lon, alt, yaw]
-  speedup: 5                                   # Simulation speed multiplier
+  speedup: 3                                   # Simulation speed multiplier
   wipe_eeprom: true                            # Clear EEPROM on startup
   use_dir: null                                # Custom directory for SITL
   delay_start: null                            # Startup delay in seconds

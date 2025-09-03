@@ -1,7 +1,8 @@
 import time
 from gz.msgs10.world_control_pb2 import WorldControl
 from gz.msgs10.boolean_pb2 import Boolean
-from gz.msgs10.world_stats_pb2 import WorldStatistics
+from gz.msgs10.empty_pb2 import Empty
+from gz.msgs10.double_pb2 import Double
 
 from gz.transport13 import Node
 
@@ -19,28 +20,29 @@ def resume_sim(node, world):
     ok, rep = node.request(svc, req, WorldControl, Boolean, timeout=2000)
     return ok and getattr(rep, "data", False)
 
-def _clb(msg):
-    pass
-    # t = int(msg.sim_time.sec) + int(msg.sim_time.nsec) * 1e-9
-    # with self._timer_lock:
-    #     self.sim_time = t
-    # if not self._clock_event.is_set():
-    #     self._clock_event.set()
+def get_sim_time(node):
+    ok, rep = node.request("/sim_time", Empty(), Empty, Double, timeout=2000)
+    if ok:
+        print("sim_time:", rep.data)
+    else:
+        print("request failed")
+
+
 if __name__ == "__main__":
     world_name = "simple_world"   # change to your world
     node = Node()
-    node.subscribe(WorldStatistics, f"/world/{world_name}/stats", _clb)
 
     interval = 0.03           # seconds between pause/resume
     count = 0
     while True:
         print(count)
-        if not pause_sim(node, world_name):
-            print("Pause failed")
+        # if not pause_sim(node, world_name):
+        #     print("Pause failed")
+        print(get_sim_time(node))
         count += 1
         time.sleep(interval)
 
-        if not resume_sim(node, world_name):
-            print("Resume failed")
+        # if not resume_sim(node, world_name):
+        #     print("Resume failed")
 
         time.sleep(interval)

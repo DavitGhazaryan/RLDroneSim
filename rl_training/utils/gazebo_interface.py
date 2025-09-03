@@ -12,12 +12,8 @@ from gz.transport13 import Node
 from gz.msgs10.world_control_pb2 import WorldControl
 from gz.msgs10.boolean_pb2 import Boolean
 from gz.msgs10.pose_pb2 import Pose
-from gz.msgs10.clock_pb2 import Clock
-from gz.msgs10.world_stats_pb2 import WorldStatistics
-
-
-
-
+from gz.msgs10.empty_pb2 import Empty
+from gz.msgs10.double_pb2 import Double
 
 logger = logging.getLogger("GazeboInterface")
 
@@ -43,9 +39,11 @@ class GazeboInterface:
                 self.sdf_file = self.sdf_file[:-4] + '_2.sdf'
         else:
             os.environ["GZ_PARTITION"] = "gz_i0"
+
+        # os.environ["GZ_TRANSPORT_RCVHWM"] = "0"
+        # os.environ["GZ_TRANSPORT_SNDHWM"] = "0"
       
         self.node = Node()
-        self.clock_node = Node()
    
         #logger.info(f"SDF file: {self.sdf_file}")
         self.world_name = self._parse_world_name(self.sdf_file)
@@ -56,14 +54,10 @@ class GazeboInterface:
         self.gui = config.get('gui')
         self.int_verbose = config.get('verbose')    
         
-        # for time synchronization 
         self.sim_time = 0.0
-        self._timer_lock = threading.Lock()
-        self._clock_event = threading.Event()
-        self._clock_sub = self.clock_node.subscribe(WorldStatistics, f"/world/{self.world_name}/stats", self._on_clock)
 
     def start_simulation(self):
-        if self.is_running():
+        if self.process is not None and self.process.poll() is None:
             raise RuntimeError("Gazebo simulation already running")
         
         # logger.debug("Starting Gazebo simulation...")
@@ -97,11 +91,8 @@ class GazeboInterface:
         except Exception as e:
             logger.exception("Failed to start Gazebo")
             raise RuntimeError(f"Failed to start Gazebo: {e}")
-    
-    def is_running(self):
-        return self.process is not None and self.process.poll() is None
-    
-    def transport_position(self, name, position, orientation, timeout_ms=1000, retries=2):
+
+    def transport_position(self, name, position, orientation, timeout_ms=1000, retries=10):
 
         svc = f"/world/{self.world_name}/set_pose"
         pose = Pose()
@@ -113,43 +104,42 @@ class GazeboInterface:
             ok, rep = self.node.request(svc, pose, Pose, Boolean, timeout_ms)  # (service, request, response_type, timeout_ms)
             if ok and getattr(rep, "data", False):
                 return True
+            else:
+                print("Transport failed")
         raise RuntimeError(f"set_pose failed on {svc} (partition={getattr(self,'partition', None)})")
     
-    def pause_simulation(self):
+    def pause_simulation(self, retries=4):
         #logger.debug(f"⏸️  Pausing simulation in world: {self.world_name}")
         svc = f"/world/{self.world_name}/control"
         req = WorldControl()
         req.pause = True                # True=pause, False=run
-        ok, rep = self.node.request(svc, req, WorldControl,  Boolean, timeout=2000)
-        if not ok:
-            raise RuntimeError(f"Service call failed: {svc}")
+        for _ in range(max(1, retries)):
+            ok, rep = self.node.request(svc, req, WorldControl,  Boolean, timeout=2000) # (service, request, response_type, timeout_ms)
+            if ok and getattr(rep, "data", False):
+                return True
+            else:
+                print("Pause failed")
+        raise RuntimeError(f"Service call failed while pausing: {svc}")
 
-    def resume_simulation(self):
+    def resume_simulation(self, retries=4):
         svc = f"/world/{self.world_name}/control"
         req = WorldControl()
         req.pause = False                   # True=pause, False=run
-        ok, rep = self.node.request(svc, req, WorldControl,  Boolean, timeout=2000)
-        if not ok:
-            raise RuntimeError(f"Service call failed: {svc}")
-        # SOLUTION 1: Use world state service to get simulation time
+        for _ in range(max(1, retries)):
+            ok, rep = self.node.request(svc, req, WorldControl,  Boolean, timeout=2000) # (service, request, response_type, timeout_ms)
+            if ok and getattr(rep, "data", False):
+                return True
+            else:
+                print("Resume failed")
+        raise RuntimeError(f"Service call failed while resuming: {svc}")
     
 
-    
     def get_sim_time(self, wait_ms=1000):
-        if not self._clock_event.is_set():
-            self._clock_event.wait(wait_ms / 1000.0)
-        with self._timer_lock:
-            return float(self.sim_time)
-        
-
-
-    def _on_clock(self, msg: WorldStatistics):
-        t = int(msg.sim_time.sec) + int(msg.sim_time.nsec) * 1e-9
-        with self._timer_lock:
-            self.sim_time = t
-        if not self._clock_event.is_set():
-            self._clock_event.set()
-
+        ok, rep = self.node.request("/sim_time", Empty(), Empty, Double, timeout=2000)
+        if ok:
+            return rep.data
+        else:
+            print("request failed")
 
     def close(self):
         if self.process is None:
