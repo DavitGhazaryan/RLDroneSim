@@ -44,6 +44,7 @@ services:
       - ./examples:/home/pid_rl/examples
       - ./rl_training:/home/pid_rl/rl_training
       - ./tests:/home/pid_rl/tests
+      - ./clock_node:/home/pid_rl/clock_node
       - ./requirements.txt:/home/pid_rl/requirements.txt
       - ./copied/simple_world.sdf:/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf
       - ./copied/simple_world_2.sdf:/home/pid_rl/ardupilot_gazebo/worlds/simple_world_2.sdf
