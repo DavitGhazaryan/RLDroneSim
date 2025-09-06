@@ -65,6 +65,7 @@ class ArdupilotEnv(gym.Env):
         self.ep_initial_pose = None       # at the episode start {lat_deg:, lon_deg:, rel_alt_m:}
         self.ep_initial_attitude = None   # {pitch_deg:, roll_deg:, yaw_deg:}
         self.ep_initial_gains = {}      # {gain_name: value}
+        self.first_initial_gains = {}      # {gain_name: value}
         
         self.mission_function = None
         self.goal_orientation = None   # {pitch_deg:, roll_deg:, yaw_deg:}
@@ -171,6 +172,7 @@ class ArdupilotEnv(gym.Env):
     
             for gain in self.action_gains:
                 self.ep_initial_gains[gain] = self.sitl.get_param(master, gain)
+                self.first_initial_gains[gain] = self.sitl.get_param(master, gain)
                 
 
             self.ep_initial_pose = {
@@ -296,7 +298,8 @@ class ArdupilotEnv(gym.Env):
         initial_gains = {}
         for gain in self.action_gains:
             # initial_gains[gain] = self.np_random.uniform(0.8, 5.2)
-            initial_gains[gain] = max(self.ep_initial_gains[gain] + self.np_random.uniform(-3.0, 3.0), 0) if not self.eval else self.ep_initial_gains[gain]
+            # initial_gains[gain] = max(self.ep_initial_gains[gain] + self.np_random.uniform(-3.0, 3.0), 0) if not self.eval else self.ep_initial_gains[gain]
+            initial_gains[gain] = max(self.first_initial_gains[gain] + self.np_random.uniform(-2.0, 2.0), 0) if not self.eval else self.ep_initial_gains[gain]
         return {
             'x_m': self.goal_pose['x_m'],
             'y_m': self.goal_pose['y_m'],    

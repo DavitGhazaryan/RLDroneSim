@@ -40,7 +40,7 @@ ddpg_params:
   learning_starts: 500                          # Steps before learning begins
   batch_size: 1024                               # Batch size for training
   tau: 0.005                                   # Soft update coefficient for target networks
-  gamma: 0.99                                  # Discount factor for future rewards
+  gamma: 0.6                                  # Discount factor for future rewards
   train_freq: 1                                # Training frequency (every N steps)
   gradient_steps: 1                             # Gradient steps per training update
   action_noise:                                # Action noise for exploration
