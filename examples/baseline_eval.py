@@ -22,9 +22,7 @@ def main():
     config_path = '/home/pid_rl/rl_training/configs/default_config.yaml'
     
     try:
-        from rl_training.utils.utils import create_run_dir, save_config_copy, save_git_info, save_metrics_json
-        import subprocess
-        import os
+
 
         config = load_config(config_path)
         

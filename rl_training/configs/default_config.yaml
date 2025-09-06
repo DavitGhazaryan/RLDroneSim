@@ -50,8 +50,11 @@ ddpg_params:
   target_policy_noise: 0.2                     # Target policy noise (for TD3-like behavior)
   target_noise_clip: 0.5                       # Target noise clipping
   verbose: 1                                   # Verbosity level
-  policy_kwargs: null                          # Additional policy arguments
-  seed: null                                   # Random seed (null for random)
+  policy_kwargs:
+    net_arch: 
+      pi: [256, 256]  # 2 hidden layers, each with 256 units (for both actor and critic)
+      qf: [256, 256]  # 2 hidden layers, each with 256 units (for both actor and critic)
+    # activation_fn: torch.nn.ReLU  # Activation function for both actor and critic networks
   device: "cuda"                               # Device for training (auto, cpu, cuda)
   _init_setup_model: true                      # Initialize model setup
 

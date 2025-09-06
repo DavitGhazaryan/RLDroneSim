@@ -24,7 +24,7 @@ class Termination(Enum):
     FAR = auto()            # too far from target
     SUCCESS = auto()        # task completed successfully         
 
-class ArdupilotEnv(gym.Env):
+class HardEnv(gym.Env):
 
     def __init__(self, config, eval=False, instance=1):
         super().__init__()
@@ -49,7 +49,6 @@ class ArdupilotEnv(gym.Env):
         else:
             logger.setLevel(logging.ERROR)
 
-        self.sitl = ArduPilotSITL(config['ardupilot_config'], instance, self.verbose)
 
         # Episode tracking
         self.initialized = False
@@ -70,6 +69,9 @@ class ArdupilotEnv(gym.Env):
         self.observation_space = self._define_observation_space()
         self.action_space = self._define_action_space()
 
+        # Connection
+        self._mavlink_master = None
+
         # Log space information for debugging
         #logger.info(f"🔧 Environment spaces initialized:")
         #logger.info(f"   Observation space: {self.observation_space}")
@@ -78,10 +80,6 @@ class ArdupilotEnv(gym.Env):
         #logger.info(f"   Observable states: {self.observable_states}")
         #logger.info(f"   Action gains: {self.action_gains}")
         
-        obs_mapping = self.get_observation_key_mapping()
-        action_mapping = self.get_action_key_mapping()
-        #logger.info(f"   Observation mapping: {obs_mapping}")
-        #logger.info(f"   Action mapping: {action_mapping}")
         
     def _define_observation_space(self):
         """
@@ -135,24 +133,20 @@ class ArdupilotEnv(gym.Env):
     def reset(self, seed=None, options=None):
         """Reset the environment to initial state."""
         super().reset(seed=seed)             # sets self.np_random
-        if hasattr(self.action_space, "seed"):
-            self.action_space.seed(seed)
-        if hasattr(self.observation_space, "seed"):
-            self.observation_space.seed(seed)
         
         self.episode_step = 0
         self.eps_stable_time = 0
         self.max_stable_time = 0
         self.accumulated_huber_error = 0.0
 
-        master = self.sitl._get_mavlink_connection()  
-        time.sleep(2)
+        master = self._get_mavlink_connection()  
+        # time.sleep(2)
 
         hb = master.wait_heartbeat()
         messages = master.messages
 
         for gain in self.action_gains:
-            self.ep_initial_gains[gain] = self.sitl.get_param(master, gain)
+            self.ep_initial_gains[gain] = self.get_param(master, gain)
             
         self.ep_initial_pose = {
             'x_m': messages["LOCAL_POSITION_NED"].y,
@@ -172,7 +166,7 @@ class ArdupilotEnv(gym.Env):
             # self.mission_function()   # No need
             self.initialized = True
 
-        self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
+        time.sleep(self.action_dt)  
 
         observation, info = self._get_observation()
         return observation, info  # observation, info
@@ -183,12 +177,12 @@ class ArdupilotEnv(gym.Env):
         total_dim = len(self.observable_gains) + len(self.observable_states)
         observation = np.zeros(total_dim, dtype=np.float32)
         
-        master = self.sitl._get_mavlink_connection()
+        master = self._get_mavlink_connection()
         master.wait_heartbeat()
         
         # Fill gains first
         for i, observable_gain in enumerate(self.observable_gains):
-            gain_value  = self.sitl.get_param(master, observable_gain)
+            gain_value  = self.get_param(master, observable_gain)
             observation[i] = gain_value
         
         # Fill states
@@ -241,19 +235,19 @@ class ArdupilotEnv(gym.Env):
 
         if len(action) != len(self.action_gains):
             raise ValueError(f"Expected action of length {len(self.action_gains)}, got {len(action)}")
-        master = self.sitl._get_mavlink_connection()
+        master = self._get_mavlink_connection()
         hb = master.wait_heartbeat()
 
         # Get current gains
         new_gains = {}
         for variable in self.action_gains:
-            new_gains[variable] = self.sitl.get_param(master, variable)
+            new_gains[variable] = self.get_param(master, variable)
         for i, var in enumerate(self.action_gains):
             new_gains[var] += action[i]
             new_gains[var] = max(new_gains[var], 0)
-            self.sitl.set_param_and_confirm(master, var, new_gains[var])
+            self.set_param_and_confirm(master, var, new_gains[var])
         
-        self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
+        time.sleep(self.action_dt)  
 
         # first get more complete info then construct observation from that        
         master.wait_heartbeat()
@@ -283,40 +277,8 @@ class ArdupilotEnv(gym.Env):
 
         return observation, reward, terminated, truncated, info
 
-    def get_observation_key_mapping(self):
-        """Get mapping from observation keys to array indices."""
-        mapping = {}
-        all_keys = self.observable_gains + self.observable_states
-        for i, key in enumerate(all_keys):
-            mapping[key] = i
-        return mapping
-    
-    def get_action_key_mapping(self):
-        """Get mapping from action keys to array indices."""
-        mapping = {}
-        for i, key in enumerate(self.action_gains):
-            mapping[key] = i
-        return mapping
-    
-    def get_observation_description(self):
-        """Get description of what each observation index represents."""
-        description = {}
-        all_keys = self.observable_gains + self.observable_states
-        for i, key in enumerate(all_keys):
-            if i < len(self.observable_gains):
-                description[f"obs_{i}"] = f"Gain: {key}"
-            else:
-                description[f"obs_{i}"] = f"State: {key}"
-        return description
-    
-    def get_action_description(self):
-        """Get description of what each action index represents."""
-        description = {}
-        for i, key in enumerate(self.action_gains):
-            description[f"action_{i}"] = f"Gain adjustment: {key}"
-        return description
 
-
+    
     def arm_drone(self, master, timeout=10):
         master.wait_heartbeat()
         t0 = time.time()
@@ -338,7 +300,7 @@ class ArdupilotEnv(gym.Env):
         master.recv_match(type='COMMAND_ACK', blocking=True, timeout=10)
 
     def takeoff_drone(self):
-        master = self.sitl._get_mavlink_connection()
+        master = self._get_mavlink_connection()
         master.wait_heartbeat()
         master.mav.command_long_send(
             master.target_system,
@@ -356,17 +318,6 @@ class ArdupilotEnv(gym.Env):
         else:
             logger.error(f"Failed to takeoff: {ack}")
 
-
-    def _gazebo_sleep(self, duration):
-        """
-        Sleep for the given duration (in seconds) using Gazebo simulation time.
-        """
-        start_time = self.gazebo.get_sim_time()
-        while True:
-            time.sleep(0.001)
-            current_time = self.gazebo.get_sim_time()
-            if current_time - start_time >= duration:
-                break
 
     def _check_vicinity_status(self, pos_error_cm, alt_error_cm):
         """
@@ -519,12 +470,103 @@ class ArdupilotEnv(gym.Env):
             return r
         else:
             raise NotImplementedError()
+    
+    def _get_mavlink_connection(self):
+        """
+        Get or create a cached MAVLink connection.
         
+        Returns:
+            mavutil.mavlink_connection: Active connection
+            
+        Raises:
+            RuntimeError: If connection cannot be established
+        """
+        if self._mavlink_master is None or not hasattr(self._mavlink_master, 'target_system'):
+            addr = f'00000000000' 
+            
+            try:
+                self._mavlink_master = mavutil.mavlink_connection(addr)
+                hb = self._mavlink_master.wait_heartbeat()
+                self._mavlink_master.target_system = hb.get_srcSystem()
+
+                self._mavlink_master.target_component = hb.get_srcComponent() or mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
+                #logger.debug(f"HB from sys:{self._mavlink_master.target_system} comp:{self._mavlink_master.target_component}")
+
+                # channels
+                PID_TUNING = 194
+                NAV_CONTROLLER_OUTPUT = 62
+
+                RATE_HZ = 100    # TODO 
+                self.set_message_interval(self._mavlink_master, PID_TUNING, RATE_HZ)
+                self.set_message_interval(self._mavlink_master, NAV_CONTROLLER_OUTPUT, RATE_HZ)
+
+                GCS_PID_MASK_VALUE = 0xFFFF
+                self.set_param_and_confirm(self._mavlink_master, "GCS_PID_MASK", GCS_PID_MASK_VALUE)
+
+                print(f"Established MAVLink connection to {addr}")
+                #logger.debug(f"Established MAVLink connection to {addr}")
+            except Exception as e:
+                self._mavlink_master = None
+                raise RuntimeError(f"Failed to establish MAVLink connection to {addr}: {e}")
+                
+        return self._mavlink_master
+
+    def set_param_and_confirm(self, master, name_str, value, timeout=3.0):
+        name_bytes = name_str.encode("ascii", "ignore")
+
+        is_float = isinstance(value, float)
+        ptype = (mavutil.mavlink.MAV_PARAM_TYPE_REAL32
+                if is_float else mavutil.mavlink.MAV_PARAM_TYPE_INT32)
+
+        master.mav.param_set_send(master.target_system, master.target_component,
+                                name_bytes, float(value), ptype)
+
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            msg = master.recv_match(type="PARAM_VALUE", blocking=True, timeout=timeout)
+            if not msg:
+                break
+            pid = (msg.param_id.decode("ascii","ignore") if isinstance(msg.param_id,(bytes,bytearray))
+                else str(msg.param_id)).rstrip("\x00")
+            if pid == name_str:
+                return True
+        logger.warn("Param is NOT SET")
+        return False
+
+    def get_param(self, master, param_name, timeout=3.0, resend_every=0.5):
+        name16 = param_name[:16]  # enforce MAVLink 16-char limit
+        name_bytes = name16.encode("ascii", "ignore")
+
+        t0 = time.time()
+        last = 0.0
+        while time.time() - t0 < timeout:
+            if time.time() - last >= resend_every:
+                master.mav.param_request_read_send(master.target_system, master.target_component, name_bytes, -1)
+                last = time.time()
+            msg = master.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.2)
+            if not msg:
+                continue
+            pid = (msg.param_id.decode("ascii", "ignore") if isinstance(msg.param_id, (bytes, bytearray))
+                else str(msg.param_id)).rstrip("\x00")
+            if pid == name16:
+                return msg.param_value
+            
+        raise TimeoutError(f"Timeout: param {param_name} not received")
+
+    def _close_mavlink_connection(self):
+        """Close and cleanup cached MAVLink connection."""
+        if self._mavlink_master is not None:
+            try:
+                self._mavlink_master.close()
+            except:
+                pass
+            self._mavlink_master = None
+
     def close(self):
         """Clean up resources."""
         #logger.info("Closing environment...")
         self.gazebo.close()
-        self.sitl.close()
+        self._close_mavlink_connection()
 
 
 if __name__ == "__main__":
@@ -532,11 +574,5 @@ if __name__ == "__main__":
     from rl_training.utils.utils import load_config
     config = load_config('/home/pid_rl/rl_training/configs/default_config.yaml')
 
-    env = ArdupilotEnv(config)
-    # check_env(env)
-    # env_reset_passive_checker(env)
-    # env_step_passive_checker(env, env.action_space.sample())
-
-    # ==== Check the step method ====
-    # check_step_determinism(env)
+    env = HardEnv(config)
     env.close()

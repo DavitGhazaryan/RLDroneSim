@@ -20,7 +20,6 @@ def load_config(config_path):
         print("Using default configuration...")
         return get_default_config()
 
-
 def get_default_config():
     """Return default Gazebo configuration."""
     return {
@@ -39,7 +38,6 @@ def get_default_config():
         }
     }
 
-
 def euler_to_quaternion(euler):
     """
     Convert Euler angles (yaw, pitch, roll) to a quaternion.
@@ -53,117 +51,6 @@ def euler_to_quaternion(euler):
     qz = np.cos(roll/2) * np.cos(pitch/2) * np.sin(yaw/2) - np.sin(roll/2) * np.sin(pitch/2) * np.cos(yaw/2)
     qw = np.cos(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
     return [qx, qy, qz, qw]
-
-def lat_lon_to_xy_meters(origin_pose, lat_deg, lon_deg):
-    """
-    Convert latitude and longitude to x,y coordinates in meters relative to the origin.
-    
-    Args:
-        lat_deg (float): Latitude in degrees
-        lon_deg (float): Longitude in degrees
-        
-    Returns:
-        tuple: (x_meters, y_meters) relative to origin
-        
-    Note:
-        Precision depends on distance from origin:
-        - Within 1km: ~1-10cm precision
-        - Within 10km: ~10cm-1m precision  
-        - Within 100km: ~1-10m precision
-        - Beyond 100km: precision degrades significantly
-    """
-    if origin_pose is None:
-        raise ValueError("Origin pose not set. Call reset() first.")
-        
-    # Convert degrees to radians
-    lat_rad = np.radians(lat_deg)
-    lon_rad = np.radians(lon_deg)
-    origin_lat_rad = np.radians(origin_pose['latitude_deg'])
-    origin_lon_rad = np.radians(origin_pose['longitude_deg'])
-    
-    # Earth's radius in meters (approximate)
-    earth_radius = 6371000.0  # meters
-    
-    # Calculate differences
-    dlat = lat_rad - origin_lat_rad
-    dlon = lon_rad - origin_lon_rad
-    
-    # Convert to meters using small-angle approximation
-    # This is accurate for distances up to ~100km
-    y_meters = dlat * earth_radius
-    x_meters = dlon * earth_radius * np.cos(origin_lat_rad)
-    
-    return x_meters, y_meters
-
-def xy_meters_to_lat_lon(origin_pose, x_meters, y_meters):
-    """
-    Convert x,y coordinates in meters relative to origin back to latitude/longitude.
-    
-    Args:
-        x_meters (float): X coordinate in meters relative to origin
-        y_meters (float): Y coordinate in meters relative to origin
-        
-    Returns:
-        tuple: (latitude_deg, longitude_deg)
-    """
-    if origin_pose is None:
-        raise ValueError("Origin pose not set. Call reset() first.")
-        
-    # Earth's radius in meters
-    earth_radius = 6371000.0
-    
-    # Convert meters back to radians
-    dlat_rad = y_meters / earth_radius
-    dlon_rad = x_meters / (earth_radius * np.cos(np.radians(origin_pose['latitude_deg'])))
-    
-    # Add to origin coordinates
-    lat_deg = origin_pose['latitude_deg'] + np.degrees(dlat_rad)
-    lon_deg = origin_pose['longitude_deg'] + np.degrees(dlon_rad)
-    
-    return lat_deg, lon_deg
-
-
-def validate_config(config, model):
-    """
-    Validate that the configuration contains all required parameters.
-    
-    Args:
-        config: Configuration dictionary
-        
-    Returns:
-        bool: True if config is valid, False otherwise
-    """
-    if model != "ddpg":
-        raise NotImplementedError("Only ddpg validation is implemented")
-
-    required_sections = ['environment_config', 'ardupilot_config', 'gazebo_config', 'ddpg_params', 'training_config']
-    
-    for section in required_sections:
-        if section not in config:
-            print(f"❌ Missing required configuration section: {section}")
-            return False
-    
-    # Check DDPG parameters
-    ddpg_params = config['ddpg_params']
-    required_ddpg_params = ['learning_rate', 'buffer_size', 'batch_size', 'tau', 'gamma']
-    
-    for param in required_ddpg_params:
-        if param not in ddpg_params:
-            print(f"❌ Missing required DDPG parameter: {param}")
-            return False
-    
-    # Check training parameters
-    training_params = config['training_config']
-    required_training_params = ['total_timesteps', 'save_freq']
-    
-    for param in required_training_params:
-        if param not in training_params:
-            print(f"❌ Missing required training parameter: {param}")
-            return False
-    
-    print("✅ Configuration validation passed!")
-    return True
-
 
 def demonstrate_observation_action_format(env):
     
@@ -193,8 +80,6 @@ def demonstrate_observation_action_format(env):
     print("\n🎯 Action Index Meaning:")
     for key, idx in action_mapping.items():
         print(f"   action[{idx}] = {key} adjustment = {sample_action[idx]:.3f}")
-
-
 
 def evaluate_agent(model, env, num_episodes):
     """
@@ -267,10 +152,51 @@ import json
 import subprocess
 
 
+def validate_config(config, model):
+    """
+    Validate that the configuration contains all required parameters.
+    
+    Args:
+        config: Configuration dictionary
+        
+    Returns:
+        bool: True if config is valid, False otherwise
+    """
+    if model != "ddpg":
+        raise NotImplementedError("Only ddpg validation is implemented")
+
+    required_sections = ['environment_config', 'ardupilot_config', 'gazebo_config', 'ddpg_params', 'training_config']
+    
+    for section in required_sections:
+        if section not in config:
+            print(f"❌ Missing required configuration section: {section}")
+            return False
+    
+    # Check DDPG parameters
+    ddpg_params = config['ddpg_params']
+    required_ddpg_params = ['learning_rate', 'buffer_size', 'batch_size', 'tau', 'gamma']
+    
+    for param in required_ddpg_params:
+        if param not in ddpg_params:
+            print(f"❌ Missing required DDPG parameter: {param}")
+            return False
+    
+    # Check training parameters
+    training_params = config['training_config']
+    required_training_params = ['total_timesteps', 'save_freq']
+    
+    for param in required_training_params:
+        if param not in training_params:
+            print(f"❌ Missing required training parameter: {param}")
+            return False
+    
+    print("✅ Configuration validation passed!")
+    return True
+
+
 def _safe_mkdir(path: str) -> str:
     os.makedirs(path, exist_ok=True)
     return path
-
 
 def create_run_dir(base_dir: str, algo: str, env_id: str, exp_name: str | None = None) -> dict:
     """
@@ -297,12 +223,10 @@ def create_run_dir(base_dir: str, algo: str, env_id: str, exp_name: str | None =
         'metrics_path': os.path.join(run_dir, 'metrics.json'),
     }
 
-
 essential_config_keys = [
     'environment_config', 'ardupilot_config', 'gazebo_config', 'ddpg_params', 'training_config',
     'evaluation_config', 'callbacks',
 ]
-
 
 def save_config_copy(config: dict, cfg_path: str) -> None:
     """Save a trimmed copy of the config to cfg.yaml in the run dir."""
@@ -313,7 +237,6 @@ def save_config_copy(config: dict, cfg_path: str) -> None:
             yaml.safe_dump(trimmed if trimmed else config, f, sort_keys=False)
     except Exception as exc:
         print(f"⚠️ Could not write config copy to {cfg_path}: {exc}")
-
 
 def save_git_info(git_path: str) -> None:
     """Write current git commit, branch, and dirty flag to git.txt if inside a git repo."""
@@ -335,7 +258,6 @@ def save_git_info(git_path: str) -> None:
         except Exception as exc2:
             print(f"⚠️ Could not write git info to {git_path}: {exc2}")
 
-
 def save_metrics_json(metrics: dict, metrics_path: str) -> None:
     """Save final evaluation summary as JSON."""
     try:
@@ -343,3 +265,9 @@ def save_metrics_json(metrics: dict, metrics_path: str) -> None:
             json.dump(metrics, f, indent=2)
     except Exception as exc:
         print(f"⚠️ Could not write metrics to {metrics_path}: {exc}")
+
+
+# --------------------
+# Connection/Communication helpers
+# --------------------
+

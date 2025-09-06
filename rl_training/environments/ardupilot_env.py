@@ -107,10 +107,10 @@ class ArdupilotEnv(gym.Env):
             lows.append(0.0)
             highs.append(100.0)
         
-        # Add bounds for states (-1000 to 1000)
+        # Add bounds for states (-100 to 100)
         for _ in self.observable_states:
-            lows.append(-1000.0)
-            highs.append(1000.0)
+            lows.append(-100.0)
+            highs.append(100.0)
         
         return spaces.Box(
             low=np.array(lows, dtype=np.float32),
@@ -305,8 +305,9 @@ class ArdupilotEnv(gym.Env):
     
     def step(self, action):
         self.episode_step += 1
-        print("new step")
         obs, reward, done, truncated, info = self._step(action)
+        print(f"Observation {obs}")
+        print(f"Reward {obs}")
         return obs, reward, done, truncated, info
 
     def _step(self, action):
@@ -392,7 +393,6 @@ class ArdupilotEnv(gym.Env):
             description[f"action_{i}"] = f"Gain adjustment: {key}"
         return description
 
-
     def arm_drone(self, master, timeout=10):
         master.wait_heartbeat()
         t0 = time.time()
@@ -432,7 +432,6 @@ class ArdupilotEnv(gym.Env):
         else:
             logger.error(f"Failed to takeoff: {ack}")
 
-
     def _gazebo_sleep(self, duration):
         """
         Sleep for the given duration (in seconds) using Gazebo simulation time.
@@ -458,7 +457,6 @@ class ArdupilotEnv(gym.Env):
         return in_vicinity
 
     def _check_terminated(self, messages):
-        print("check terminated")
         message = messages["LOCAL_POSITION_NED"]
         attitude = messages["ATTITUDE"]
 
