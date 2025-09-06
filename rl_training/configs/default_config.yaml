@@ -41,8 +41,8 @@ ddpg_params:
   batch_size: 1024                               # Batch size for training
   tau: 0.005                                   # Soft update coefficient for target networks
   gamma: 0.6                                  # Discount factor for future rewards
-  train_freq: 1                                # Training frequency (every N steps)
-  gradient_steps: 1                             # Gradient steps per training update
+  train_freq: 10                                # Training frequency (every N steps)
+  gradient_steps: 10                             # Gradient steps per training update
   action_noise:                                # Action noise for exploration
     type: "NormalActionNoise"                   # Noise type: NormalActionNoise
     mean: 0.0                                  # Mean of noise distribution
@@ -63,7 +63,7 @@ ddpg_params:
 # Callbacks for logging, checkpointing, and evaluation during training
 callbacks:
   - type: "checkpoint"                         # Checkpoint callback type
-    save_freq: 1000                             # Save frequency for checkpoints
+    save_freq: 10                             # Save frequency for checkpoints
     name_prefix: "ddpg_ardupilot"              # Checkpoint name prefix
 
 # Evaluation configuration
