@@ -31,6 +31,7 @@ services:
       - ./copied/GCS_MAVLink_Copter.cpp:/home/pid_rl/ardupilot/ArduCopter/GCS_MAVLink_Copter.cpp
       - ./copied/mode_guided.cpp:/home/pid_rl/ardupilot/ArduCopter/mode_guided.cpp
       - ./copied/lua_scripts:/home/pid_rl/ardupilot/scripts
+      - ./copied/tmp_build.sh:/home/pid_rl/ardupilot/tmp_build.sh
     devices:
       - /dev/dri:/dev/dri
     network_mode: host
