@@ -7,7 +7,7 @@
 # =============================================================================
 
 environment_config:
-  max_episode_steps: 20
+  max_episode_steps: 100
   mode: "altitude"               # Flight mode: position, attitude, stabilize, altitude
   observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"  # Which PID gains to observe
   observable_states: "alt_err+vZ_err+accZ_err" # Which states to observe
@@ -63,7 +63,7 @@ ddpg_params:
 # Callbacks for logging, checkpointing, and evaluation during training
 callbacks:
   - type: "checkpoint"                         # Checkpoint callback type
-    save_freq: 10                             # Save frequency for checkpoints
+    save_freq: 200                             # Save frequency for checkpoints
     name_prefix: "ddpg_ardupilot"              # Checkpoint name prefix
 
 # Evaluation configuration
@@ -104,7 +104,7 @@ ardupilot_config:
   ideal_sensors: true                          # Use ideal sensor models
   count: null                                  # Number of vehicle instances
   location: null                               # Home location: [lat, lon, alt, yaw]
-  speedup: 3                                   # Simulation speed multiplier
+  speedup: 5                                   # Simulation speed multiplier
   wipe_eeprom: true                            # Clear EEPROM on startup
   use_dir: null                                # Custom directory for SITL
   delay_start: null                            # Startup delay in seconds
@@ -127,5 +127,5 @@ ardupilot_config:
 # control the wind from the sdf file directly
 gazebo_config:
   sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  # always write the version for 1 instance
-  gui: true                                         
+  gui: false                                         
   verbose: false          # enables -v 4; internal logging of gz            

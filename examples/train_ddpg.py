@@ -19,8 +19,8 @@ def create_action_noise_from_config(action_noise_config, action_dim):
     
     if noise_type == 'NormalActionNoise':
         from stable_baselines3.common.noise import NormalActionNoise
-        mean = action_noise_config.get('mean', 0.0)
-        sigma = action_noise_config.get('sigma', 0.1)
+        mean = action_noise_config.get('mean')
+        sigma = action_noise_config.get('sigma')
         
         return NormalActionNoise(
             mean=mean * np.ones(action_dim),
@@ -40,22 +40,15 @@ def _latest_ckpt_path(path_like: str, name_prefix: str):
     Accepts a directory or a specific .zip path.
     Returns (model_zip_path, steps_int) or (None, None) if not found.
     """
+    print(path_like, name_prefix)
     if path_like is None:
         return None, None
     if os.path.isfile(path_like) and path_like.endswith(".zip"):
         m = re.search(r"_(\d+)_steps\.zip$", os.path.basename(path_like))
         steps = int(m.group(1)) if m else None
         return path_like, steps
+    return None, None
 
-    # treat as directory
-    pattern = os.path.join(path_like, f"{name_prefix}_*_steps.zip")
-    zips = sorted(glob.glob(pattern), key=os.path.getmtime)
-    if not zips:
-        return None, None
-    last = zips[-1]
-    m = re.search(r"_(\d+)_steps\.zip$", os.path.basename(last))
-    steps = int(m.group(1)) if m else None
-    return last, steps
 
 def _replay_for(model_zip_path: str, steps: int, name_prefix: str):
     """
@@ -96,7 +89,8 @@ def train_ddpg_agent(env, config, run_dirs=None, checkpoint: str | None = None):
             break
 
     model_zip, steps = _latest_ckpt_path(checkpoint, name_prefix) if checkpoint else (None, None)
-
+    print("Threr we go")
+    print(model_zip, steps)
     if model_zip:
         print(f"📦 Resuming from checkpoint: {model_zip}")
         model = DDPG.load(model_zip, env=env, device=ddpg_config.get('device', "auto"))
@@ -201,10 +195,8 @@ def main():
         save_config_copy(config, run_dirs['cfg_path'])
         save_git_info(run_dirs['git_path'])
         
-        model = train_ddpg_agent(env, config, run_dirs)
-        # model = train_ddpg_agent(env, config, run_dirs, checkpoint="rl_training/runs/ddpg/hover/20250906_113430/models")  # continue from latest
-        # model = train_ddpg_agent(env, config, run_dirs, checkpoint=".../models/ddpg_ardupilot_30_steps.zip")              # continue from specific
-
+        # model = train_ddpg_agent(env, config, run_dirs)
+        model = train_ddpg_agent(env, config, run_dirs, checkpoint="/home/pid_rl/rl_training/runs/ddpg/hover/20250906_181428/models/ddpg_ardupilot_45600_steps.zip")  
         if model is not None:
             results = evaluate_agent(model, env, config.get("evaluation_config").get("n_eval_episodes"))
             
