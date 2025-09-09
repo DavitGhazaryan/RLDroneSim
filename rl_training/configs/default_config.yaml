@@ -21,8 +21,6 @@ environment_config:
 
 training_config:
   total_timesteps: 1000000                        # Total training timesteps
-  eval_freq: 1000                               # Evaluation frequency
-  save_freq: 1000                              # Model saving frequency
   log_freq: 50                                 # Logging frequency
   runs_base: "/home/pid_rl/rl_training/runs"            # Base directory for all runs
   algo: "ddpg"                                 # Algorithm name for run dir
@@ -37,18 +35,18 @@ training_config:
 ddpg_params:
   learning_rate: 0.001                          # Learning rate for actor and critic networks
   buffer_size: 100000                          # Size of replay buffer
-  learning_starts: 500                          # Steps before learning begins
+  learning_starts: 5000                          # Steps before learning begins
   batch_size: 1024                               # Batch size for training
   tau: 0.005                                   # Soft update coefficient for target networks
-  gamma: 0.6                                  # Discount factor for future rewards
-  train_freq: 10                                # Training frequency (every N steps)
-  gradient_steps: 10                             # Gradient steps per training update
+  gamma: 0.99                                  # Discount factor for future rewards
+  train_freq: 1                                # Training frequency (every N steps)
+  gradient_steps: 3                             # Gradient steps per training update
   action_noise:                                # Action noise for exploration
     type: "NormalActionNoise"                   # Noise type: NormalActionNoise
     mean: 0.0                                  # Mean of noise distribution
     sigma: 0.1                                 # Standard deviation of noise
-  target_policy_noise: 0.2                     # Target policy noise (for TD3-like behavior)
-  target_noise_clip: 0.5                       # Target noise clipping
+  # target_policy_noise: 0.2                     # Target policy noise (for TD3-like behavior)
+  # target_noise_clip: 0.5                       # Target noise clipping
   verbose: 1                                   # Verbosity level
   policy_kwargs:
     net_arch: 
@@ -68,7 +66,7 @@ callbacks:
 
 # Evaluation configuration
 evaluation_config:
-  n_eval_episodes: 2                           # Number of evaluation episodes
+  n_eval_episodes: 20                           # Number of evaluation episodes
   deterministic: true                           # Use deterministic actions
   save_results: true                            # Save evaluation results
   plot_results: false                            # Plot evaluation results
@@ -78,22 +76,22 @@ evaluation_config:
 # Comment out sections you don't want to use or set weights to 0
 reward_config:
   hover:                                       # Hover reward function
-    alt_w: 0.2                       # Weight for altitude error
-    xy_w: 0.1                        # Weight for XY position error
-    velN_w: 0.08                      # Weight for North velocity mag
-    velE_w: 0.08                      # Weight for East velocity magnitude
-    velZ_w: 0.08                      # Weight for Down velocity magnitude
-    accN_w: 0.05                      # Weight for North acceleration magnitude
-    accE_w: 0.05                      # Weight for East acceleration magnitude
-    accZ_w: 0.05                      # Weight for Down acceleration magnitude
-    acc_yaw_w: 0.05                   # Weight for yaw acceleration magnitude
-    att_w: 0.8                       # Weight for attitude error
-    vicinity: 0.05
-    success_reward: 100
-    crash_penalty_att: 50                      # Penalty for crashes
-    crash_penalty_vel: 80                      # Penalty for crashes
-    crash_penalty_flip: 80                      # Penalty for crashes
-    crash_penalty_far: 80                      # Penalty for crashes
+    alt_w: 0.9                       # Weight for altitude error
+    xy_w: 0.8                        # Weight for XY position error
+    velN_w: 0.06                      # Weight for North velocity err
+    velE_w: 0.06                      # Weight for East velocity err
+    velZ_w: 0.06                      # Weight for Down velocity err
+    accN_w: 0.05                      # Weight for North acceleration err
+    accE_w: 0.05                      # Weight for East acceleration err
+    accZ_w: 0.05                      # Weight for Down acceleration err
+    acc_yaw_w: 0.5                   # Weight for yaw acceleration err
+    vicinity: 2
+    success_reward: 2000
+    crash_penalty_att: 400                      # Penalty for crashes
+    crash_penalty_vel: 400                      # Penalty for crashes
+    crash_penalty_flip: 400                     # Penalty for crashes
+    crash_penalty_far: 400                      # Penalty for crashes
+    step_reward: 800                            # Penalty for crashes
 
 
 
@@ -104,7 +102,7 @@ ardupilot_config:
   ideal_sensors: true                          # Use ideal sensor models
   count: null                                  # Number of vehicle instances
   location: null                               # Home location: [lat, lon, alt, yaw]
-  speedup: 5                                   # Simulation speed multiplier
+  speedup: 3                                   # Simulation speed multiplier
   wipe_eeprom: true                            # Clear EEPROM on startup
   use_dir: null                                # Custom directory for SITL
   delay_start: null                            # Startup delay in seconds
@@ -127,5 +125,5 @@ ardupilot_config:
 # control the wind from the sdf file directly
 gazebo_config:
   sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  # always write the version for 1 instance
-  gui: false                                         
+  gui: true                                         
   verbose: false          # enables -v 4; internal logging of gz            

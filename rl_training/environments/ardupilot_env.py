@@ -13,7 +13,7 @@ sys.path.insert(0, "/home/student/Dev/pid_rl")
 
 from rl_training.utils.gazebo_interface import GazeboInterface
 from rl_training.utils.ardupilot_sitl import ArduPilotSITL
-from rl_training.utils.utils import euler_to_quaternion
+from rl_training.utils.utils import euler_to_quaternion, huber
 logger = logging.getLogger("Env")
 from enum import Enum, auto
 
@@ -528,16 +528,26 @@ class ArdupilotEnv(gym.Env):
             alt_err = messages["NAV_CONTROLLER_OUTPUT"].alt_error
 
             # Velocity error components 
-            vel_err_n = messages["DEBUG_VECT"].y 
-            vel_err_e = messages["DEBUG_VECT"].x 
-            vel_err_d = messages["DEBUG_VECT"].z
+            vel_err_n = abs(messages["DEBUG_VECT"].y) 
+            vel_err_e = abs(messages["DEBUG_VECT"].x) 
+            vel_err_d = abs(messages["DEBUG_VECT"].z)
 
             # Acceleration components if available
-            acc_err_n = messages["PID_TUNING[1]"].desired - messages["PID_TUNING[1]"].achieved
-            acc_err_e = messages["PID_TUNING[2]"].desired - messages["PID_TUNING[2]"].achieved
-            acc_err_yaw = messages["PID_TUNING[3]"].desired - messages["PID_TUNING[3]"].achieved
-            acc_err_d = messages["PID_TUNING[4]"].desired - messages["PID_TUNING[4]"].achieved
-            
+            acc_err_n = abs(messages["PID_TUNING[1]"].desired - messages["PID_TUNING[1]"].achieved)
+            acc_err_e = abs(messages["PID_TUNING[2]"].desired - messages["PID_TUNING[2]"].achieved)
+            acc_err_yaw = abs(messages["PID_TUNING[3]"].desired - messages["PID_TUNING[3]"].achieved)
+            acc_err_d = abs(messages["PID_TUNING[4]"].desired - messages["PID_TUNING[4]"].achieved)
+            # Print all the error terms with proper formatting
+            print(f"🔎 Reward error terms:")
+            print(f"   pos_err_cm: {pos_err_cm:.3f}")
+            print(f"   alt_err: {alt_err:.3f}")
+            print(f"   vel_err_n: {vel_err_n:.3f}")
+            print(f"   vel_err_e: {vel_err_e:.3f}")
+            print(f"   vel_err_d: {vel_err_d:.3f}")
+            print(f"   acc_err_n: {acc_err_n:.3f}")
+            print(f"   acc_err_e: {acc_err_e:.3f}")
+            print(f"   acc_err_yaw: {acc_err_yaw:.3f}")
+            print(f"   acc_err_d: {acc_err_d:.3f}")
             # Weighted error aggregation
             w = self.reward_coefs
             e_t = (
@@ -552,19 +562,14 @@ class ArdupilotEnv(gym.Env):
                 + w.get("acc_yaw_w") * acc_err_yaw
             )
             
-            # Huber function for primary penalty
-            def huber(e, delta):
-                a = abs(e)/delta
-                return 0.5*a*a if a <= 1.0 else a - 0.5
-            
             # Vicinity parameters (consistent with _check_terminated)
             delta = w.get("vicinity")   # Huber parameter (≈ vicinity radius)
             
             # Check vicinity status using helper method
             # in_vicinity = self._check_vicinity_status(pos_err, alt_err)
-            
+            # print(f"    error before huber: {e_t}")
             r = -huber(e_t, delta)
-            
+            print(f"    huber error after error terms: {r}")
             self.accumulated_huber_error += huber(e_t, delta)
 
             if reason:
@@ -579,12 +584,14 @@ class ArdupilotEnv(gym.Env):
                         r -= self.reward_coefs.get("crash_penalty_far")
                     case Termination.SUCCESS:
                         r += self.reward_coefs.get("success_reward") 
-                        
+            else:
+                r += self.reward_coefs.get("step_reward")
             # Vicinity bonus
             # if in_vicinity:
             #     gamma_s = 1.0  # Base vicinity bonus
             #     eta = 1.0      # Log scaling factor
                 # r += gamma_s + eta * math.log1p(self.eps_stable_time)
+            print(f"    huber error after termination checks: {r}")
             
         
             # Timeout reward (when episode ends due to max steps)
@@ -592,6 +599,8 @@ class ArdupilotEnv(gym.Env):
                 kappa = 1.0    # Stable time coefficient
                 nu = 1.0      # Huber error coefficient
                 r += kappa * self.max_stable_time - nu * self.accumulated_huber_error
+                print(f"    huber error if completing: {r}")
+            
             return r
         else:
             raise NotImplementedError()

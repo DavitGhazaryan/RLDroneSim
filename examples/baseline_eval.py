@@ -32,7 +32,7 @@ def main():
         
         env = Monitor(env)
 
-        results = evaluate_agent(model=None, env=env, num_episodes=5)
+        results = evaluate_agent(model=None, env=env, num_episodes=25)
                 
     except Exception as e:
         print(f"\n❌ Error occurred: {e}")
