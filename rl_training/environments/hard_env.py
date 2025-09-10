@@ -385,89 +385,9 @@ class HardEnv(gym.Env):
         return False, None 
 
     def _compute_reward(self, messages, reason):
-        """
-        Compute reward based on stable-time mechanism.
-        
-        Reward components:
-        - Dense penalty: -Huber(e_t, delta) where e_t is the error
-        - Vicinity bonus: γ_s + η*log(1 + stable_time) when in vicinity
-        - Success bonus: +R_succ when episode terminates successfully
-        - Timeout reward: κ*max_stable_time - ν*sum_huber_error when timing out
-        - Crash penalty: Large negative reward for dangerous attitudes
-        """
         if self.reward_config == "hover":
-
-            # Calculate position error (2D distance)
-            pos_err_cm = messages["NAV_CONTROLLER_OUTPUT"].wp_dist   # in cm integers
-
-            alt_err = messages["NAV_CONTROLLER_OUTPUT"].alt_error
-
-            # Velocity error components 
-            vel_err_n = messages["DEBUG_VECT"].y 
-            vel_err_e = messages["DEBUG_VECT"].x 
-            vel_err_d = messages["DEBUG_VECT"].z
-
-            # Acceleration components if available
-            acc_err_n = messages["PID_TUNING[1]"].desired - messages["PID_TUNING[1]"].achieved
-            acc_err_e = messages["PID_TUNING[2]"].desired - messages["PID_TUNING[2]"].achieved
-            acc_err_yaw = messages["PID_TUNING[3]"].desired - messages["PID_TUNING[3]"].achieved
-            acc_err_d = messages["PID_TUNING[4]"].desired - messages["PID_TUNING[4]"].achieved
-            
-            # Weighted error aggregation
-            w = self.reward_coefs
-            e_t = (
-                w.get("alt_w") * alt_err
-                + w.get("xy_w") * pos_err_cm
-                + w.get("velN_w") * vel_err_n
-                + w.get("velE_w") * vel_err_e
-                + w.get("velZ_w") * vel_err_d
-                + w.get("accN_w") * acc_err_n
-                + w.get("accE_w") * acc_err_e
-                + w.get("accZ_w") * acc_err_d
-                + w.get("acc_yaw_w") * acc_err_yaw
-            )
-            
-            # Huber function for primary penalty
-            def huber(e, delta):
-                a = abs(e)/delta
-                return 0.5*a*a if a <= 1.0 else a - 0.5
-            
-            # Vicinity parameters (consistent with _check_terminated)
-            delta = w.get("vicinity")   # Huber parameter (≈ vicinity radius)
-            
-            # Check vicinity status using helper method
-            # in_vicinity = self._check_vicinity_status(pos_err, alt_err)
-            
-            r = -huber(e_t, delta)
-            
-            self.accumulated_huber_error += huber(e_t, delta)
-
-            if reason:
-                match reason:
-                    case Termination.ATTITUDE_ERR:
-                        r -= self.reward_coefs.get("crash_penalty_att")
-                    case Termination.VEL_EXC:
-                        r -= self.reward_coefs.get("crash_penalty_vel")
-                    case Termination.FLIP:
-                        r -= self.reward_coefs.get("crash_penalty_flip")
-                    case Termination.FAR:
-                        r -= self.reward_coefs.get("crash_penalty_far")
-                    case Termination.SUCCESS:
-                        r += self.reward_coefs.get("success_reward") 
-                        
-            # Vicinity bonus
-            # if in_vicinity:
-            #     gamma_s = 1.0  # Base vicinity bonus
-            #     eta = 1.0      # Log scaling factor
-                # r += gamma_s + eta * math.log1p(self.eps_stable_time)
-            
-        
-            # Timeout reward (when episode ends due to max steps)
-            if self.episode_step >= self.max_episode_steps:
-                kappa = 1.0    # Stable time coefficient
-                nu = 1.0      # Huber error coefficient
-                r += kappa * self.max_stable_time - nu * self.accumulated_huber_error
-            return r
+            ### Abstract with ArdupilotEnv
+            return 0
         else:
             raise NotImplementedError()
     

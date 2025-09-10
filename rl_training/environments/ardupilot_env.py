@@ -22,7 +22,6 @@ class Termination(Enum):
     VEL_EXC = auto()        # velocity exceeded
     FLIP = auto()           # flip detected
     FAR = auto()            # too far from target
-    SUCCESS = auto()        # task completed successfully         
 
 class ArdupilotEnv(gym.Env):
     """
@@ -486,10 +485,7 @@ class ArdupilotEnv(gym.Env):
        
         if (dist_xy_now > 1.5 * dist_xy_init and dist_xy_now > 0.1) or (alt_now > alt_init * 3  and alt_now > 0.1):
             return True, Termination.FAR
-        
-        
-        if dist_xy_now > 1.5 * dist_xy_init and dist_xy_now > 0.1:
-            return True, Termination.FAR
+
 
         # 5. goal is reached - check both position and altitude
         pos_err_cm = messages["NAV_CONTROLLER_OUTPUT"].wp_dist   # in cm integers
@@ -501,8 +497,6 @@ class ArdupilotEnv(gym.Env):
         # Update stable time tracking (consolidated logic)
         if in_vicinity:
             self.eps_stable_time += 1
-            if self.eps_stable_time >= self.max_episode_steps/2:
-                return True, Termination.SUCCESS
         else:
             if self.eps_stable_time > self.max_stable_time:
                 self.max_stable_time = self.eps_stable_time
@@ -514,18 +508,13 @@ class ArdupilotEnv(gym.Env):
         Compute reward based on stable-time mechanism.
         
         Reward components:
-        - Dense penalty: -Huber(e_t, delta) where e_t is the error
-        - Vicinity bonus: γ_s + η*log(1 + stable_time) when in vicinity
-        - Success bonus: +R_succ when episode terminates successfully
-        - Timeout reward: κ*max_stable_time - ν*sum_huber_error when timing out
-        - Crash penalty: Large negative reward for dangerous attitudes
         """
         if self.reward_config == "hover":
 
             # Calculate position error (2D distance)
-            pos_err_cm = messages["NAV_CONTROLLER_OUTPUT"].wp_dist   # in cm integers
+            pos_err_cm = abs(messages["NAV_CONTROLLER_OUTPUT"].wp_dist)   # in cm integers
 
-            alt_err = messages["NAV_CONTROLLER_OUTPUT"].alt_error
+            alt_err = abs(messages["NAV_CONTROLLER_OUTPUT"].alt_error)
 
             # Velocity error components 
             vel_err_n = abs(messages["DEBUG_VECT"].y) 
@@ -537,40 +526,43 @@ class ArdupilotEnv(gym.Env):
             acc_err_e = abs(messages["PID_TUNING[2]"].desired - messages["PID_TUNING[2]"].achieved)
             acc_err_yaw = abs(messages["PID_TUNING[3]"].desired - messages["PID_TUNING[3]"].achieved)
             acc_err_d = abs(messages["PID_TUNING[4]"].desired - messages["PID_TUNING[4]"].achieved)
-            # Print all the error terms with proper formatting
-            print(f"🔎 Reward error terms:")
-            print(f"   pos_err_cm: {pos_err_cm:.3f}")
-            print(f"   alt_err: {alt_err:.3f}")
-            print(f"   vel_err_n: {vel_err_n:.3f}")
-            print(f"   vel_err_e: {vel_err_e:.3f}")
-            print(f"   vel_err_d: {vel_err_d:.3f}")
-            print(f"   acc_err_n: {acc_err_n:.3f}")
-            print(f"   acc_err_e: {acc_err_e:.3f}")
-            print(f"   acc_err_yaw: {acc_err_yaw:.3f}")
-            print(f"   acc_err_d: {acc_err_d:.3f}")
+
+
             # Weighted error aggregation
             w = self.reward_coefs
+
+            delta = w.get("vicinity")
+
             e_t = (
-                w.get("alt_w") * alt_err
-                + w.get("xy_w") * pos_err_cm
-                + w.get("velN_w") * vel_err_n
-                + w.get("velE_w") * vel_err_e
-                + w.get("velZ_w") * vel_err_d
-                + w.get("accN_w") * acc_err_n
-                + w.get("accE_w") * acc_err_e
-                + w.get("accZ_w") * acc_err_d
-                + w.get("acc_yaw_w") * acc_err_yaw
+                  w.get("alt_w")     * huber(alt_err, delta)
+                + w.get("xy_w")      * huber(pos_err_cm, delta)
+                + w.get("velN_w")    * huber(vel_err_n, delta)
+                + w.get("velE_w")    * huber(vel_err_e, delta)
+                + w.get("velZ_w")    * huber(vel_err_d, delta)
+                + w.get("accN_w")    * huber(acc_err_n, delta)
+                + w.get("accE_w")    * huber(acc_err_e, delta)
+                + w.get("accZ_w")    * huber(acc_err_d, delta)
+                + w.get("acc_yaw_w") * huber(acc_err_yaw, delta)
             )
-            
+
+
+            # Print all the error terms with proper formatting
+            print(f"🔎 Reward error terms:")
+            print(f"   pos_err_cm: {pos_err_cm:.3f}     {huber(pos_err_cm, delta)}")
+            print(f"   alt_err: {alt_err:.3f}           {huber(alt_err, delta)}")
+            print(f"   vel_err_n: {vel_err_n:.3f}       {huber(vel_err_n, delta)}")
+            print(f"   vel_err_e: {vel_err_e:.3f}       {huber(vel_err_e, delta)}")
+            print(f"   vel_err_d: {vel_err_d:.3f}       {huber(vel_err_d, delta)}")
+            print(f"   acc_err_n: {acc_err_n:.3f}       {huber(acc_err_n, delta)}")
+            print(f"   acc_err_e: {acc_err_e:.3f}       {huber(acc_err_e, delta)}")
+            print(f"   acc_err_yaw: {acc_err_yaw:.3f}   {huber(acc_err_yaw, delta)}")
+            print(f"   acc_err_d: {acc_err_d:.3f}       {huber(acc_err_d, delta)}")
+
             # Vicinity parameters (consistent with _check_terminated)
-            delta = w.get("vicinity")   # Huber parameter (≈ vicinity radius)
-            
-            # Check vicinity status using helper method
-            # in_vicinity = self._check_vicinity_status(pos_err, alt_err)
-            # print(f"    error before huber: {e_t}")
-            r = -huber(e_t, delta)
-            print(f"    huber error after error terms: {r}")
-            self.accumulated_huber_error += huber(e_t, delta)
+            r = -e_t
+            # r = -huber(e_t, delta)
+            print(f"     error after error terms: {r}")
+            self.accumulated_huber_error += abs(r)
 
             if reason:
                 match reason:
@@ -582,23 +574,19 @@ class ArdupilotEnv(gym.Env):
                         r -= self.reward_coefs.get("crash_penalty_flip")
                     case Termination.FAR:
                         r -= self.reward_coefs.get("crash_penalty_far")
-                    case Termination.SUCCESS:
-                        r += self.reward_coefs.get("success_reward") 
             else:
                 r += self.reward_coefs.get("step_reward")
-            # Vicinity bonus
-            # if in_vicinity:
-            #     gamma_s = 1.0  # Base vicinity bonus
-            #     eta = 1.0      # Log scaling factor
-                # r += gamma_s + eta * math.log1p(self.eps_stable_time)
+
             print(f"    huber error after termination checks: {r}")
-            
-        
+                    
             # Timeout reward (when episode ends due to max steps)
             if self.episode_step >= self.max_episode_steps:
-                kappa = 1.0    # Stable time coefficient
+                r += self.reward_coefs.get("success_reward")
+                kappa = 3.0    # Stable time coefficient
                 nu = 1.0      # Huber error coefficient
-                r += kappa * self.max_stable_time - nu * self.accumulated_huber_error
+                r += kappa * self.max_stable_time
+
+                r -= nu * self.accumulated_huber_error
                 print(f"    huber error if completing: {r}")
             
             return r

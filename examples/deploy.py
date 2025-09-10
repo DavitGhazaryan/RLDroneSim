@@ -12,10 +12,7 @@ Usage:
 
 import numpy as np
 import sys
-import json
-import time
 import argparse
-from typing import Dict, Any
 
 # project paths
 sys.path.insert(0, "/home/pid_rl")
@@ -69,30 +66,6 @@ def main():
     print("🔧 Building ArdupilotEnv...")
     env = HardEnv(cfg, eval=True, instance=args.instance)
 
-    # 2) Load model
-    # print(f"📦 Loading model: {args.model_path}")
-    # model = DDPG.load(args.model_path, env=env, device=args.device, print_system_info=False)
-
-    # results = run_episodes(model, env, args.episodes, args.deterministic or True, args.max_steps)
-
-    # # 4) Save metrics (optional)
-    # if args.save_metrics:
-    #     os.makedirs(os.path.dirname(os.path.abspath(args.save_metrics)), exist_ok=True)
-    #     payload = {
-    #         "model_path": os.path.abspath(args.model_path),
-    #         "config_path": os.path.abspath(args.config),
-    #         "instance": args.instance,
-    #         "deterministic": True if (args.deterministic or args.eval_mode) else False,
-    #         "timestamp": int(time.time()),
-    #         "episodes": results,
-    #         "summary": {
-    #             "mean_return": float(sum(r["return"] for r in results) / len(results)),
-    #             "mean_length": float(sum(r["length"] for r in results) / len(results)),
-    #         },
-    #     }
-    #     with open(args.save_metrics, "w") as f:
-    #         json.dump(payload, f, indent=2)
-    #     print(f"💾 Metrics saved to: {args.save_metrics}")
     episode = 0
     episode_rewards = []
     episode_lengths = []
@@ -102,7 +75,7 @@ def main():
             episode_reward = 0.0
             episode_length = 0
             
-            print(f"   Episode {episode + 1}: ", end="")
+            print(f"   Episode {episode + 1}: ")
             
             while True:
 

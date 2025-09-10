@@ -267,8 +267,8 @@ def save_metrics_json(metrics: dict, metrics_path: str) -> None:
         print(f"⚠️ Could not write metrics to {metrics_path}: {exc}")
 
 def huber(e, delta):
-    a = abs(e)/delta
-    return 0.5*a*a if a <= 1.0 else a - 0.5
+    a = abs(e)
+    return 0.5*(a**2) if a <= delta else delta*(a - 0.5*delta)
             
 # --------------------
 # Connection/Communication helpers

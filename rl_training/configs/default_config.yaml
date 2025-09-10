@@ -13,7 +13,7 @@ environment_config:
   observable_states: "alt_err+vZ_err+accZ_err" # Which states to observe
   action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"      # Which PID gains to adjust
   reward_config: "hover"       
-  action_dt: 1.0                 # Time interval between action and observation
+  action_dt: 0.05                 # Time interval between action and observation
   takeoff_altitude: 5.0          #  meters
   verbose: false                  # controls custom logging not internal
   # normalize_observations: true   # Whether to normalize observations
@@ -76,22 +76,22 @@ evaluation_config:
 # Comment out sections you don't want to use or set weights to 0
 reward_config:
   hover:                                       # Hover reward function
-    alt_w: 0.9                       # Weight for altitude error
-    xy_w: 0.8                        # Weight for XY position error
-    velN_w: 0.06                      # Weight for North velocity err
-    velE_w: 0.06                      # Weight for East velocity err
-    velZ_w: 0.06                      # Weight for Down velocity err
-    accN_w: 0.05                      # Weight for North acceleration err
-    accE_w: 0.05                      # Weight for East acceleration err
-    accZ_w: 0.05                      # Weight for Down acceleration err
+    alt_w: 1                       # Weight for altitude error
+    xy_w: 1                        # Weight for XY position error
+    velN_w: 0.05                      # Weight for North velocity err
+    velE_w: 0.05                      # Weight for East velocity err
+    velZ_w: 0.05                      # Weight for Down velocity err
+    accN_w: 0.01                      # Weight for North acceleration err
+    accE_w: 0.01                      # Weight for East acceleration err
+    accZ_w: 0.01                      # Weight for Down acceleration err
     acc_yaw_w: 0.5                   # Weight for yaw acceleration err
     vicinity: 2
-    success_reward: 2000
+    success_reward: 5000
     crash_penalty_att: 400                      # Penalty for crashes
     crash_penalty_vel: 400                      # Penalty for crashes
     crash_penalty_flip: 400                     # Penalty for crashes
     crash_penalty_far: 400                      # Penalty for crashes
-    step_reward: 800                            # Penalty for crashes
+    step_reward: 1000                            # Penalty for crashes
 
 
 
@@ -102,7 +102,7 @@ ardupilot_config:
   ideal_sensors: true                          # Use ideal sensor models
   count: null                                  # Number of vehicle instances
   location: null                               # Home location: [lat, lon, alt, yaw]
-  speedup: 3                                   # Simulation speed multiplier
+  speedup: 5                                   # Simulation speed multiplier
   wipe_eeprom: true                            # Clear EEPROM on startup
   use_dir: null                                # Custom directory for SITL
   delay_start: null                            # Startup delay in seconds
