@@ -85,13 +85,19 @@ reward_config:
     accE_w: 0.01                      # Weight for East acceleration err
     accZ_w: 0.01                      # Weight for Down acceleration err
     acc_yaw_w: 0.5                   # Weight for yaw acceleration err
-    vicinity: 2
+    vicinity: 1
     success_reward: 5000
     crash_penalty_att: 400                      # Penalty for crashes
     crash_penalty_vel: 400                      # Penalty for crashes
     crash_penalty_flip: 400                     # Penalty for crashes
     crash_penalty_far: 400                      # Penalty for crashes
     step_reward: 1000                            # Penalty for crashes
+    tolerance:
+      xy_tol: 10.0
+      alt_tol: 10.0
+      vel_tol: 10.0
+      acc_tol: 10.0
+
 
 
 

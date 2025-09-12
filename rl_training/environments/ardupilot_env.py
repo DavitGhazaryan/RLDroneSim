@@ -509,29 +509,35 @@ class ArdupilotEnv(gym.Env):
         
         Reward components:
         """
+        def nrm(e, tau):  # normalized, clipped
+            return min(abs(e)/tau, 10.0)
+        
+        w = self.reward_coefs
+        tol = w.get("tolerance")
+
+
         if self.reward_config == "hover":
 
             # Calculate position error (2D distance)
-            pos_err_cm = abs(messages["NAV_CONTROLLER_OUTPUT"].wp_dist)   # in cm integers
+            pos_err_cm = nrm(messages["NAV_CONTROLLER_OUTPUT"].wp_dist, tol["xy_tol"])   # in cm integers
 
-            alt_err = abs(messages["NAV_CONTROLLER_OUTPUT"].alt_error)
+            alt_err = nrm(messages["NAV_CONTROLLER_OUTPUT"].alt_error, tol["alt_tol"])
 
             # Velocity error components 
-            vel_err_n = abs(messages["DEBUG_VECT"].y) 
-            vel_err_e = abs(messages["DEBUG_VECT"].x) 
-            vel_err_d = abs(messages["DEBUG_VECT"].z)
+            vel_err_n = nrm(messages["DEBUG_VECT"].y, tol["vel_tol"])
+            vel_err_e = nrm(messages["DEBUG_VECT"].x, tol["vel_tol"]) 
+            vel_err_d = nrm(messages["DEBUG_VECT"].z, tol["vel_tol"])
 
             # Acceleration components if available
-            acc_err_n = abs(messages["PID_TUNING[1]"].desired - messages["PID_TUNING[1]"].achieved)
-            acc_err_e = abs(messages["PID_TUNING[2]"].desired - messages["PID_TUNING[2]"].achieved)
-            acc_err_yaw = abs(messages["PID_TUNING[3]"].desired - messages["PID_TUNING[3]"].achieved)
-            acc_err_d = abs(messages["PID_TUNING[4]"].desired - messages["PID_TUNING[4]"].achieved)
+            acc_err_n = nrm(messages["PID_TUNING[1]"].desired - messages["PID_TUNING[1]"].achieved,   tol["acc_tol"])
+            acc_err_e = nrm(messages["PID_TUNING[2]"].desired - messages["PID_TUNING[2]"].achieved,   tol["acc_tol"])
+            acc_err_yaw = nrm(messages["PID_TUNING[3]"].desired - messages["PID_TUNING[3]"].achieved, tol["acc_tol"])
+            acc_err_d = nrm(messages["PID_TUNING[4]"].desired - messages["PID_TUNING[4]"].achieved,   tol["acc_tol"])
 
 
             # Weighted error aggregation
-            w = self.reward_coefs
 
-            delta = w.get("vicinity")
+            delta = w.get("vicinity")   # should be 1 I guess
 
             e_t = (
                   w.get("alt_w")     * huber(alt_err, delta)
