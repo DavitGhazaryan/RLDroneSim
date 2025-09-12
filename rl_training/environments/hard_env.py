@@ -130,6 +130,16 @@ class HardEnv(gym.Env):
             dtype=np.float32
         )
     
+    def set_message_interval(self, master, msg_id, hz):
+        # master = self._get_mavlink_connection()
+        interval_us = int(1e6 / hz)
+        master.mav.command_long_send(
+            master.target_system, master.target_component,
+            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
+            float(msg_id), float(interval_us), 0, 0, 0, 0, 0)
+        master.recv_match(type="COMMAND_ACK", blocking=False, timeout=0.5)      
+
+
     def reset(self, seed=None, options=None):
         """Reset the environment to initial state."""
         super().reset(seed=seed)             # sets self.np_random
@@ -166,7 +176,7 @@ class HardEnv(gym.Env):
             # self.mission_function()   # No need
             self.initialized = True
 
-        time.sleep(self.action_dt)  
+        # time.sleep(self.action_dt)  
 
         observation, info = self._get_observation()
         return observation, info  # observation, info
@@ -189,18 +199,18 @@ class HardEnv(gym.Env):
         if messages is None:
             messages = master.messages
         
-        for i, observable_state in enumerate(self.observable_states):
-            idx = len(self.observable_gains) + i
-            if observable_state == 'alt_err':
-                state_value = messages["NAV_CONTROLLER_OUTPUT"].alt_error
-            elif observable_state == 'vZ_err':
-                state_value = messages["DEBUG_VECT"].z
-            elif observable_state == 'accZ_err':
-                state_value = messages["PID_TUNING[4]"].desired - messages["PID_TUNING[4]"].achieved   # underneath it is not desired but target
-            else:
-                raise NotImplemented("Observation not available")
-            observation[idx] = state_value
-
+        # for i, observable_state in enumerate(self.observable_states):
+        #     idx = len(self.observable_gains) + i
+        #     if observable_state == 'alt_err':
+        #         state_value = messages["NAV_CONTROLLER_OUTPUT"].alt_error
+        #     # elif observable_state == 'vZ_err':
+        #     #     state_value = messages["DEBUG_VECT"].z
+        #     # elif observable_state == 'accZ_err':
+        #     #     state_value = messages["PID_TUNING[4]"].desired - messages["PID_TUNING[4]"].achieved   # underneath it is not desired but target
+        #     else:
+        #         raise NotImplemented("Observation not available")
+        #     observation[idx] = state_value
+        print(observation)
         info = {}
         return observation, info 
 
@@ -223,7 +233,6 @@ class HardEnv(gym.Env):
 
     def step(self, action):
         self.episode_step += 1
-        print("new step")
         obs, reward, done, truncated, info = self._step(action)
         return obs, reward, done, truncated, info
 
@@ -235,33 +244,38 @@ class HardEnv(gym.Env):
 
         if len(action) != len(self.action_gains):
             raise ValueError(f"Expected action of length {len(self.action_gains)}, got {len(action)}")
+        
+        print("entered step")
         master = self._get_mavlink_connection()
         hb = master.wait_heartbeat()
-
+        print("hb received")
         # Get current gains
         new_gains = {}
         for variable in self.action_gains:
             new_gains[variable] = self.get_param(master, variable)
+
+        
         for i, var in enumerate(self.action_gains):
             new_gains[var] += action[i]
             new_gains[var] = max(new_gains[var], 0)
             self.set_param_and_confirm(master, var, new_gains[var])
-        
-        time.sleep(self.action_dt)  
+        print("params set")
+        # time.sleep(self.action_dt)  
 
         # first get more complete info then construct observation from that        
         master.wait_heartbeat()
         messages = master.messages
         observation, info = self._get_observation(messages)
         terminated, reason = self._check_terminated(messages)
+        print("observations received")
         if terminated:
             truncated = False
             #logger.info(f"Terminating the episode {reason}")
         else:
             terminated = False
-            truncated = self.episode_step >= self.max_episode_steps
-            if truncated:
-                pass
+            # truncated = self.episode_step >= self.max_episode_steps
+            # if truncated:
+            #     pass
                 #logger.info(f"Truncating the Episode")
 
         # Create proper info dictionary
@@ -274,7 +288,7 @@ class HardEnv(gym.Env):
         reward = self._compute_reward(messages, reason)
         for i, var in enumerate(self.action_gains):
             info[var] = new_gains[var]
-
+        truncated = False
         return observation, reward, terminated, truncated, info
 
 
@@ -288,7 +302,7 @@ class HardEnv(gym.Env):
                 continue
             if hb.system_status == mavutil.mavlink.MAV_STATE_STANDBY:
                 break
-            time.sleep(0.01)
+            # time.sleep(0.01)
         if time.time() - t0 >= timeout:
             raise TimeoutError("Failed to arm the drone")
         
@@ -335,53 +349,52 @@ class HardEnv(gym.Env):
     def _check_terminated(self, messages):
         print("check terminated")
         message = messages["LOCAL_POSITION_NED"]
-        attitude = messages["ATTITUDE"]
-
-        # 1. Attitude Error
-        if abs(math.degrees(attitude.pitch) - self.goal_orientation['pitch_deg']) > 15 or abs(math.degrees(attitude.roll) - self.goal_orientation['roll_deg']) > 15:
-            return True, Termination.ATTITUDE_ERR
+        # attitude = messages["ATTITUDE"]
+        # # 1. Attitude Error
+        # if abs(math.degrees(attitude.pitch) - self.goal_orientation['pitch_deg']) > 15 or abs(math.degrees(attitude.roll) - self.goal_orientation['roll_deg']) > 15:
+        #     return True, Termination.ATTITUDE_ERR
         
-        # Velocity magnitude
-        if abs(message.vx) > 4 or abs(message.vy) > 4 or abs(message.vz) > 4:
-            return True, Termination.VEL_EXC
+        # # Velocity magnitude
+        # if abs(message.vx) > 4 or abs(message.vy) > 4 or abs(message.vz) > 4:
+        #     return True, Termination.VEL_EXC
         
-        # 2. Flip (pitch or roll > 90 deg)
-        if abs(math.degrees(attitude.pitch)) > 90 or abs(math.degrees(attitude.roll)) > 90:
-            return True, Termination.FLIP
+        # # 2. Flip (pitch or roll > 90 deg)
+        # if abs(math.degrees(attitude.pitch)) > 90 or abs(math.degrees(attitude.roll)) > 90:
+        #     return True, Termination.FLIP
         
-        # 3. 2x farther xy from goal than originally
-        dist_xy_init = np.linalg.norm(np.array([self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]]) 
-                                   - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
-        dist_xy_now = np.linalg.norm(np.array([message.y, message.x, -message.z]) 
-                                  - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
+        # # 3. 2x farther xy from goal than originally
+        # dist_xy_init = np.linalg.norm(np.array([self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]]) 
+        #                            - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
+        # dist_xy_now = np.linalg.norm(np.array([message.y, message.x, -message.z]) 
+        #                           - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
        
-        # 4. 2x farther altitude from goal than originally
-        alt_init = abs(self.ep_initial_pose["z_m"] - self.goal_pose["z_m"])
-        alt_now = abs(-message.z - self.goal_pose["z_m"])
+        # # 4. 2x farther altitude from goal than originally
+        # alt_init = abs(self.ep_initial_pose["z_m"] - self.goal_pose["z_m"])
+        # alt_now = abs(-message.z - self.goal_pose["z_m"])
        
-        if (dist_xy_now > 1.5 * dist_xy_init and dist_xy_now > 0.1) or (alt_now > alt_init * 3  and alt_now > 0.1):
-            return True, Termination.FAR
+        # if (dist_xy_now > 1.5 * dist_xy_init and dist_xy_now > 0.1) or (alt_now > alt_init * 3  and alt_now > 0.1):
+        #     return True, Termination.FAR
         
         
-        if dist_xy_now > 1.5 * dist_xy_init and dist_xy_now > 0.1:
-            return True, Termination.FAR
+        # if dist_xy_now > 1.5 * dist_xy_init and dist_xy_now > 0.1:
+        #     return True, Termination.FAR
 
-        # 5. goal is reached - check both position and altitude
-        pos_err_cm = messages["NAV_CONTROLLER_OUTPUT"].wp_dist   # in cm integers
-        alt_err_m = messages["NAV_CONTROLLER_OUTPUT"].alt_error
+        # # 5. goal is reached - check both position and altitude
+        # pos_err_cm = messages["NAV_CONTROLLER_OUTPUT"].wp_dist   # in cm integers
+        # alt_err_m = messages["NAV_CONTROLLER_OUTPUT"].alt_error
         
-        # Check if in vicinity using helper method
-        in_vicinity = self._check_vicinity_status(pos_err_cm, alt_err_m * 100)
+        # # Check if in vicinity using helper method
+        # in_vicinity = self._check_vicinity_status(pos_err_cm, alt_err_m * 100)
         
-        # Update stable time tracking (consolidated logic)
-        if in_vicinity:
-            self.eps_stable_time += 1
-            if self.eps_stable_time >= self.max_episode_steps/2:
-                return True, Termination.SUCCESS
-        else:
-            if self.eps_stable_time > self.max_stable_time:
-                self.max_stable_time = self.eps_stable_time
-            self.eps_stable_time = 0
+        # # Update stable time tracking (consolidated logic)
+        # if in_vicinity:
+        #     self.eps_stable_time += 1
+        #     if self.eps_stable_time >= self.max_episode_steps/2:
+        #         return True, Termination.SUCCESS
+        # else:
+        #     if self.eps_stable_time > self.max_stable_time:
+        #         self.max_stable_time = self.eps_stable_time
+        #     self.eps_stable_time = 0
         return False, None 
 
     def _compute_reward(self, messages, reason):
@@ -402,10 +415,10 @@ class HardEnv(gym.Env):
             RuntimeError: If connection cannot be established
         """
         if self._mavlink_master is None or not hasattr(self._mavlink_master, 'target_system'):
-            addr = f'00000000000' 
+            addr = f'/dev/ttyUSB0' 
             
             try:
-                self._mavlink_master = mavutil.mavlink_connection(addr)
+                self._mavlink_master = mavutil.mavlink_connection(addr, baud=57600)
                 hb = self._mavlink_master.wait_heartbeat()
                 self._mavlink_master.target_system = hb.get_srcSystem()
 
@@ -416,7 +429,7 @@ class HardEnv(gym.Env):
                 PID_TUNING = 194
                 NAV_CONTROLLER_OUTPUT = 62
 
-                RATE_HZ = 100    # TODO 
+                RATE_HZ = 200    # TODO 
                 self.set_message_interval(self._mavlink_master, PID_TUNING, RATE_HZ)
                 self.set_message_interval(self._mavlink_master, NAV_CONTROLLER_OUTPUT, RATE_HZ)
 
@@ -440,7 +453,7 @@ class HardEnv(gym.Env):
 
         master.mav.param_set_send(master.target_system, master.target_component,
                                 name_bytes, float(value), ptype)
-
+        print("")
         t0 = time.time()
         while time.time() - t0 < timeout:
             msg = master.recv_match(type="PARAM_VALUE", blocking=True, timeout=timeout)
@@ -485,7 +498,7 @@ class HardEnv(gym.Env):
     def close(self):
         """Clean up resources."""
         #logger.info("Closing environment...")
-        self.gazebo.close()
+        # self.gazebo.close()
         self._close_mavlink_connection()
 
 

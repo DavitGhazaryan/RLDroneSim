@@ -49,16 +49,16 @@ def run_episodes(model: DDPG, env, n_episodes: int, deterministic: bool, max_ste
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, required=True, help="Path to saved SB3 model (.zip).")
+    # parser.add_argument("--model_path", type=str, required=True, help="Path to saved SB3 model (.zip).")
     parser.add_argument("--config", type=str, default="/home/pid_rl/rl_training/configs/default_config.yaml")
     parser.add_argument("--instance", type=int, default=1, choices=[1, 2])
-    parser.add_argument("--episodes", type=int, default=5)
-    parser.add_argument("--deterministic", action="store_true", help="Use greedy policy for deployment.")
-    parser.add_argument("--eval_mode", action="store_true",
-                        help="Use utils.evaluate_agent (fast) instead of manual rollouts.")
-    parser.add_argument("--max_steps", type=int, default=None, help="Cap steps per episode (optional).")
-    parser.add_argument("--device", type=str, default="auto", help="SB3 device: auto/cpu/cuda")
-    parser.add_argument("--save_metrics", type=str, default=None, help="Optional JSON path for results.")
+    # parser.add_argument("--episodes", type=int, default=5)
+    # parser.add_argument("--deterministic", action="store_true", help="Use greedy policy for deployment.")
+    # parser.add_argument("--eval_mode", action="store_true",
+    #                     help="Use utils.evaluate_agent (fast) instead of manual rollouts.")
+    # parser.add_argument("--max_steps", type=int, default=None, help="Cap steps per episode (optional).")
+    # parser.add_argument("--device", type=str, default="auto", help="SB3 device: auto/cpu/cuda")
+    # parser.add_argument("--save_metrics", type=str, default=None, help="Optional JSON path for results.")
     args = parser.parse_args()
 
     # 1) Load cfg & env
@@ -72,6 +72,7 @@ def main():
     try:
         while True:
             obs, info = env.reset()
+            print("Env reset")
             episode_reward = 0.0
             episode_length = 0
             
@@ -80,8 +81,11 @@ def main():
             while True:
 
                 action = env.action_space.sample()  # will be 0 0 0 0 action 
+                print()
+                print("Before step")
                 obs, reward, terminated, truncated, info = env.step(action)
-                
+
+                print("After Step")
                 episode_reward += reward
                 episode_length += 1
                 
@@ -100,7 +104,7 @@ def main():
         print("\n📊 Evaluation Results:")
         print(f"   Average reward: {avg_reward:.2f} ± {std_reward:.2f}")
         print(f"   Average episode length: {avg_length:.1f} steps")
-        print(f"   Success rate: {sum(1 for r in episode_rewards if r > 0) / len(episode_rewards):.1%}")
+        # print(f"   Success rate: {sum(1 for r in episode_rewards if r > 0) / len(episode_rewards):.1%}")
         
         # 5) Cleanup
         env.close()
