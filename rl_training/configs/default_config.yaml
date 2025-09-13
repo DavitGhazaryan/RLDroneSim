@@ -21,7 +21,6 @@ environment_config:
 
 training_config:
   total_timesteps: 1000000                        # Total training timesteps
-  log_freq: 50                                 # Logging frequency
   runs_base: "/home/pid_rl/rl_training/runs"            # Base directory for all runs
   algo: "ddpg"                                 # Algorithm name for run dir
   mission: "hover"                                
@@ -139,5 +138,5 @@ ardupilot_config:
 # control the wind from the sdf file directly
 gazebo_config:
   sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  # always write the version for 1 instance
-  gui: true                                         
+  gui: false                                         
   verbose: false          # enables -v 4; internal logging of gz            
