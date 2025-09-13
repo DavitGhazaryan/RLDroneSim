@@ -94,7 +94,6 @@ def evaluate_agent(model, env, num_episodes):
         Evaluation results
     """
 
-    
     print(f"\n🧪 Evaluating agent over {num_episodes} episodes...")
     
     episode_rewards = []
@@ -103,6 +102,7 @@ def evaluate_agent(model, env, num_episodes):
     for episode in range(num_episodes):
         obs, info = env.reset()
         episode_reward = 0.0
+        episode_discounted_return = 0.0
         episode_length = 0
         
         print(f"   Episode {episode + 1}: ", end="")
@@ -116,6 +116,7 @@ def evaluate_agent(model, env, num_episodes):
             obs, reward, terminated, truncated, info = env.step(action)
             
             episode_reward += reward
+            
             episode_length += 1
             
             if terminated or truncated:
@@ -270,6 +271,10 @@ def huber(e, delta):
     a = abs(e)
     return 0.5*(a**2) if a <= delta else delta*(a - 0.5*delta)
             
+
+def nrm(e, tau):
+    return min(abs(e)/tau, 10.0)
+
 # --------------------
 # Connection/Communication helpers
 # --------------------

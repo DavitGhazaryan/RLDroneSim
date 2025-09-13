@@ -78,25 +78,30 @@ reward_config:
   hover:                                       # Hover reward function
     alt_w: 1                       # Weight for altitude error
     xy_w: 1                        # Weight for XY position error
-    velN_w: 0.05                      # Weight for North velocity err
-    velE_w: 0.05                      # Weight for East velocity err
-    velZ_w: 0.05                      # Weight for Down velocity err
-    accN_w: 0.01                      # Weight for North acceleration err
-    accE_w: 0.01                      # Weight for East acceleration err
-    accZ_w: 0.01                      # Weight for Down acceleration err
-    acc_yaw_w: 0.5                   # Weight for yaw acceleration err
-    vicinity: 1
-    success_reward: 5000
-    crash_penalty_att: 400                      # Penalty for crashes
-    crash_penalty_vel: 400                      # Penalty for crashes
-    crash_penalty_flip: 400                     # Penalty for crashes
-    crash_penalty_far: 400                      # Penalty for crashes
-    step_reward: 1000                            # Penalty for crashes
-    tolerance:
-      xy_tol: 10.0
-      alt_tol: 10.0
-      vel_tol: 10.0
-      acc_tol: 10.0
+    velN_w: 1                      # Weight for North velocity err
+    velE_w: 1                      # Weight for East velocity err
+    velZ_w: 1                      # Weight for Down velocity err
+    accN_w: 1                      # Weight for North acceleration err
+    accE_w: 1                      # Weight for East acceleration err
+    accZ_w: 1                      # Weight for Down acceleration err
+    acc_yaw_w: 1                   # Weight for yaw acceleration err
+    stable_time_coef: 10
+    success_reward: 2000
+    crash_penalty_att:  -20                      # Penalty for crashes
+    crash_penalty_vel:  -20                      # Penalty for crashes
+    crash_penalty_flip: -20                     # Penalty for crashes
+    crash_penalty_far:  -20                      # Penalty for crashes
+    step_reward: 100                            # Penalty for crashes
+    tolerance: 
+      xy_tol: 3.0           # cm
+      alt_tol: 0.03         #
+      vel_n_tol: 2.0        #  ?
+      vel_e_tol: 2.0        #  ?
+      vel_d_tol: 3.0        #  ?
+      acc_n_tol: 0.5        #  ? 
+      acc_e_tol: 0.003      #  ? 
+      acc_yaw_tol: 0.002    #  ? 
+      acc_d_tol: 8.8        #  ? 
 
 
 

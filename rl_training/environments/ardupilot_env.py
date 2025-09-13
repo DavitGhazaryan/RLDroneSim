@@ -13,7 +13,7 @@ sys.path.insert(0, "/home/student/Dev/pid_rl")
 
 from rl_training.utils.gazebo_interface import GazeboInterface
 from rl_training.utils.ardupilot_sitl import ArduPilotSITL
-from rl_training.utils.utils import euler_to_quaternion, huber
+from rl_training.utils.utils import euler_to_quaternion, nrm
 logger = logging.getLogger("Env")
 from enum import Enum, auto
 
@@ -71,7 +71,6 @@ class ArdupilotEnv(gym.Env):
         self.goal_pose = None          # {latitude_deg:, longitude_deg:, relative_altitude_m:}
         self.eps_stable_time = 0
         self.max_stable_time = 0
-        self.accumulated_huber_error = 0.0  # Track Huber errors for timeout reward
 
         # Initialize spaces
         self.observation_space = self._define_observation_space()
@@ -85,8 +84,8 @@ class ArdupilotEnv(gym.Env):
         #logger.info(f"   Observable states: {self.observable_states}")
         #logger.info(f"   Action gains: {self.action_gains}")
         
-        obs_mapping = self.get_observation_key_mapping()
-        action_mapping = self.get_action_key_mapping()
+        # obs_mapping = self.get_observation_key_mapping()
+        # action_mapping = self.get_action_key_mapping()
         #logger.info(f"   Observation mapping: {obs_mapping}")
         #logger.info(f"   Action mapping: {action_mapping}")
         
@@ -194,7 +193,6 @@ class ArdupilotEnv(gym.Env):
             self.ep_initial_pose, self.ep_initial_attitude, self.ep_initial_gains = self.get_random_initial_state()
             self.eps_stable_time = 0
             self.max_stable_time = 0
-            self.accumulated_huber_error = 0.0
 
             logger.info(f"Setting gains to {self.ep_initial_gains}")
             master = self.sitl._get_mavlink_connection()
@@ -503,96 +501,86 @@ class ArdupilotEnv(gym.Env):
             self.eps_stable_time = 0
         return False, None 
 
+
     def _compute_reward(self, messages, reason):
         """
         Compute reward based on stable-time mechanism.
         
         Reward components:
         """
-        def nrm(e, tau):  # normalized, clipped
-            return min(abs(e)/tau, 10.0)
         
         w = self.reward_coefs
         tol = w.get("tolerance")
 
 
         if self.reward_config == "hover":
-
-            # Calculate position error (2D distance)
+            ## initialize with 100 step reward
+            r = self.reward_coefs.get("step_reward")
+            
+            # Calculate position error 
             pos_err_cm = nrm(messages["NAV_CONTROLLER_OUTPUT"].wp_dist, tol["xy_tol"])   # in cm integers
-
             alt_err = nrm(messages["NAV_CONTROLLER_OUTPUT"].alt_error, tol["alt_tol"])
-
+            
             # Velocity error components 
-            vel_err_n = nrm(messages["DEBUG_VECT"].y, tol["vel_tol"])
-            vel_err_e = nrm(messages["DEBUG_VECT"].x, tol["vel_tol"]) 
-            vel_err_d = nrm(messages["DEBUG_VECT"].z, tol["vel_tol"])
-
+            vel_err_n = nrm(messages["DEBUG_VECT"].y, tol["vel_n_tol"])
+            vel_err_e = nrm(messages["DEBUG_VECT"].x, tol["vel_e_tol"]) 
+            vel_err_d = nrm(messages["DEBUG_VECT"].z, tol["vel_d_tol"])
+            
             # Acceleration components if available
-            acc_err_n = nrm(messages["PID_TUNING[1]"].desired - messages["PID_TUNING[1]"].achieved,   tol["acc_tol"])
-            acc_err_e = nrm(messages["PID_TUNING[2]"].desired - messages["PID_TUNING[2]"].achieved,   tol["acc_tol"])
-            acc_err_yaw = nrm(messages["PID_TUNING[3]"].desired - messages["PID_TUNING[3]"].achieved, tol["acc_tol"])
-            acc_err_d = nrm(messages["PID_TUNING[4]"].desired - messages["PID_TUNING[4]"].achieved,   tol["acc_tol"])
-
+            acc_err_n = nrm(messages["PID_TUNING[1]"].desired - messages["PID_TUNING[1]"].achieved,   tol["acc_n_tol"])
+            acc_err_e = nrm(messages["PID_TUNING[2]"].desired - messages["PID_TUNING[2]"].achieved,   tol["acc_e_tol"])
+            acc_err_yaw = nrm(messages["PID_TUNING[3]"].desired - messages["PID_TUNING[3]"].achieved, tol["acc_yaw_tol"])
+            acc_err_d = nrm(messages["PID_TUNING[4]"].desired - messages["PID_TUNING[4]"].achieved,   tol["acc_d_tol"])
 
             # Weighted error aggregation
-
-            delta = w.get("vicinity")   # should be 1 I guess
-
             e_t = (
-                  w.get("alt_w")     * huber(alt_err, delta)
-                + w.get("xy_w")      * huber(pos_err_cm, delta)
-                + w.get("velN_w")    * huber(vel_err_n, delta)
-                + w.get("velE_w")    * huber(vel_err_e, delta)
-                + w.get("velZ_w")    * huber(vel_err_d, delta)
-                + w.get("accN_w")    * huber(acc_err_n, delta)
-                + w.get("accE_w")    * huber(acc_err_e, delta)
-                + w.get("accZ_w")    * huber(acc_err_d, delta)
-                + w.get("acc_yaw_w") * huber(acc_err_yaw, delta)
+                  w.get("alt_w")     * alt_err 
+                + w.get("xy_w")      * pos_err_cm
+                + w.get("velN_w")    * vel_err_n 
+                + w.get("velE_w")    * vel_err_e 
+                + w.get("velZ_w")    * vel_err_d 
+                + w.get("accN_w")    * acc_err_n 
+                + w.get("accE_w")    * acc_err_e 
+                + w.get("accZ_w")    * acc_err_d 
+                + w.get("acc_yaw_w") * acc_err_yaw
             )
-
 
             # Print all the error terms with proper formatting
             print(f"🔎 Reward error terms:")
-            print(f"   pos_err_cm: {pos_err_cm:.3f}     {huber(pos_err_cm, delta)}")
-            print(f"   alt_err: {alt_err:.3f}           {huber(alt_err, delta)}")
-            print(f"   vel_err_n: {vel_err_n:.3f}       {huber(vel_err_n, delta)}")
-            print(f"   vel_err_e: {vel_err_e:.3f}       {huber(vel_err_e, delta)}")
-            print(f"   vel_err_d: {vel_err_d:.3f}       {huber(vel_err_d, delta)}")
-            print(f"   acc_err_n: {acc_err_n:.3f}       {huber(acc_err_n, delta)}")
-            print(f"   acc_err_e: {acc_err_e:.3f}       {huber(acc_err_e, delta)}")
-            print(f"   acc_err_yaw: {acc_err_yaw:.3f}   {huber(acc_err_yaw, delta)}")
-            print(f"   acc_err_d: {acc_err_d:.3f}       {huber(acc_err_d, delta)}")
+            print(f"   pos_err_cm:{pos_err_cm:.3f}    ") # {huber(pos_err_cm,  tol["xy_tol"]) }")
+            print(f"   alt_err:   {alt_err:.3f}       ") # {huber(alt_err,     tol["alt_tol"])  }")
+            print(f"   vel_err_n: {vel_err_n:.3f}     ") # {huber(vel_err_n,   tol["vel_tol"])  }")
+            print(f"   vel_err_e: {vel_err_e:.3f}     ") # {huber(vel_err_e,   tol["vel_tol"])  }")
+            print(f"   vel_err_d: {vel_err_d:.3f}     ") # {huber(vel_err_d,   tol["vel_tol"])  }")
+            print(f"   acc_err_n: {acc_err_n:.3f}     ") # {huber(acc_err_n,   tol["acc_tol"])  }")
+            print(f"   acc_err_e: {acc_err_e:.3f}     ") # {huber(acc_err_e,   tol["acc_tol"])  }")
+            print(f"   acc_err_yaw: {acc_err_yaw:.3f} ") # {huber(acc_err_yaw, tol["acc_tol"])  }")
+            print(f"   acc_err_d: {acc_err_d:.3f}     ") # {huber(acc_err_d,   tol["acc_tol"])  }")
 
-            # Vicinity parameters (consistent with _check_terminated)
-            r = -e_t
-            # r = -huber(e_t, delta)
-            print(f"     error after error terms: {r}")
-            self.accumulated_huber_error += abs(r)
+            # Decrease reward based on the errors
+            r -= e_t
+            print(f" weighted error: {e_t}")
 
             if reason:
                 match reason:
                     case Termination.ATTITUDE_ERR:
-                        r -= self.reward_coefs.get("crash_penalty_att")
+                        r = self.reward_coefs.get("crash_penalty_att")
                     case Termination.VEL_EXC:
-                        r -= self.reward_coefs.get("crash_penalty_vel")
+                        r = self.reward_coefs.get("crash_penalty_vel")
                     case Termination.FLIP:
-                        r -= self.reward_coefs.get("crash_penalty_flip")
+                        r = self.reward_coefs.get("crash_penalty_flip")
                     case Termination.FAR:
-                        r -= self.reward_coefs.get("crash_penalty_far")
-            else:
-                r += self.reward_coefs.get("step_reward")
+                        r = self.reward_coefs.get("crash_penalty_far")
 
-            print(f"    huber error after termination checks: {r}")
+            print(f"    reward after termination checks: {r}")
                     
-            # Timeout reward (when episode ends due to max steps)
-            if self.episode_step >= self.max_episode_steps:
+            #  Timeout reward and has not crashed
+            if self.episode_step >= self.max_episode_steps and r > 0:  
                 r += self.reward_coefs.get("success_reward")
-                kappa = 3.0    # Stable time coefficient
-                nu = 1.0      # Huber error coefficient
+                
+                kappa = self.reward_coefs.get("stable_time_coef")
                 r += kappa * self.max_stable_time
 
-                r -= nu * self.accumulated_huber_error
                 print(f"    huber error if completing: {r}")
             
             return r
