@@ -8,6 +8,9 @@ class TensorboardCallback(BaseCallback):
         self.log_action_stats = log_action_stats
         self.log_gain_keys = log_gain_keys or []
         self._config_logged = False
+        self.ep_ret = None          # undiscounted sum per env
+        self.ep_disc = None         # discounted sum per env
+        self.pow_gamma = None       # current gamma^t per env
 
     def _on_training_start(self) -> None:
         if self._config_logged:
@@ -21,6 +24,7 @@ class TensorboardCallback(BaseCallback):
             else:
                 env0 = getattr(self.training_env, "envs", [self.training_env])[0]
                 cfg = getattr(getattr(env0, "env", env0), "config", None)
+            self.gamma = self.model.gamma
         except Exception:
             pass
         if cfg is not None:
@@ -28,42 +32,47 @@ class TensorboardCallback(BaseCallback):
                 self.logger.record_text("config/yaml", str(cfg))
             except Exception:
                 pass
-        self._config_logged = True
+        self.gamma = float(getattr(self.model, "gamma"))
+        self.n_envs = int(getattr(self.training_env, "num_envs", 1))
+        self.ep_ret = np.zeros(self.n_envs, dtype=float)
+        self.ep_disc = np.zeros(self.n_envs, dtype=float)
+        self.pow_gamma = np.ones(self.n_envs, dtype=float)
 
-    def _safe_record_scalar(self, key: str, val: Any):
-        try:
-            if isinstance(val, (np.generic, np.ndarray)):
-                if np.isscalar(val):
-                    val = float(val)
-                else:
-                    # best default: mean over array
-                    val = float(np.mean(val))
-            elif isinstance(val, (int, float)):
-                val = float(val)
-            else:
-                return
-            self.logger.record(key, val)
-        except Exception:
-            pass
 
     def _on_step(self) -> bool:
         infos = self.locals.get("infos", [])
+
         # # Merge infos from all parallel envs, last one wins
         merged: Dict[str, Any] = {}
         for d in infos or []:
             if isinstance(d, dict):
                 merged.update(d)
-        # env scalars (guarded)
-        env_keys = [
-            "pos_error", "alt_error", "stable_time", "max_stable_time",
-            "accumulated_huber_error"
-        ]
+
+        # make sure that they are in info dict as well. !!
+        env_keys = ["pos_error", "alt_error", "max_stable_time"]
         for k in env_keys:
             if k in merged:
-                self._safe_record_scalar(f"env/{k}", merged[k])
+                self.logger.record(f"env/{k}", merged[k])
 
-        # gains (either flat in info or nested under 'gains')   
+        # gains    
         for k in self.log_gain_keys:
-            self._safe_record_scalar(f"gains/{k}", merged[k])
+            self.logger.record(f"gains/{k}", merged[k])
 
+        # log returns after each episode end
+        rewards = np.asarray(self.locals["rewards"], dtype=float)     # shape: (n_envs,)
+        dones   = np.asarray(self.locals["dones"], dtype=bool)        # shape: (n_envs,)
+
+        # online update: G_t = Σ r_k * gamma^k
+        self.ep_ret += rewards
+        self.ep_disc += self.pow_gamma * rewards
+        self.pow_gamma *= self.gamma
+
+        # log + reset on episode end for each env
+        for i, d in enumerate(dones):
+            if d:
+                self.logger.record("rollout/ep_ret_undisc", float(self.ep_ret[i]))
+                self.logger.record("rollout/ep_ret_disc", float(self.ep_disc[i]))
+                self.ep_ret[i] = 0.0
+                self.ep_disc[i] = 0.0
+                self.pow_gamma[i] = 1.0
         return True

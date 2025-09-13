@@ -199,16 +199,16 @@ def _safe_mkdir(path: str) -> str:
     os.makedirs(path, exist_ok=True)
     return path
 
-def create_run_dir(base_dir: str, algo: str, env_id: str, exp_name: str | None = None) -> dict:
+def create_run_dir(base_dir: str, algo: str, mission: str, exp_name: str | None = None) -> dict:
     """
     Create a structured run directory tree:
-    runs/<algo>/<env_id>/<YYYYMMDD_HHMMSS>_{exp_name}/ with subdirs tb/ and models/
+    runs/<algo>/<mission>/<YYYYMMDD_HHMMSS>_{exp_name}/ with subdirs tb/ and models/
 
     Returns a dict with paths.
     """
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = f"_{exp_name}" if exp_name else ""
-    run_dir = os.path.join(base_dir, algo, env_id, f"{stamp}{suffix}")
+    run_dir = os.path.join(base_dir, algo, mission, f"{stamp}{suffix}")
     tb_dir = os.path.join(run_dir, "tb")
     models_dir = os.path.join(run_dir, "models")
 

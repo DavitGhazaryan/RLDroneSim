@@ -34,35 +34,38 @@ training_config:
 # Core hyperparameters for the DDPG algorithm
 ddpg_params:
   learning_rate: 0.001                          # Learning rate for actor and critic networks
-  buffer_size: 100000                          # Size of replay buffer
-  learning_starts: 5000                          # Steps before learning begins
-  batch_size: 1024                               # Batch size for training
-  tau: 0.005                                   # Soft update coefficient for target networks
-  gamma: 0.99                                  # Discount factor for future rewards
-  train_freq: 1                                # Training frequency (every N steps)
+  buffer_size: 100000                           # Size of replay buffer
+  learning_starts: 5000                         # Steps before learning begins
+  batch_size: 1024                              # Batch size for training
+  tau: 0.005                                    # Soft update coefficient for target networks
+  gamma: 0.99                                   # Discount factor for future rewards
+  train_freq: 1                                 # Training frequency (every N steps)
   gradient_steps: 3                             # Gradient steps per training update
-  action_noise:                                # Action noise for exploration
+  action_noise:                                 # Action noise for exploration
     type: "NormalActionNoise"                   # Noise type: NormalActionNoise
-    mean: 0.0                                  # Mean of noise distribution
-    sigma: 0.1                                 # Standard deviation of noise
-  # target_policy_noise: 0.2                     # Target policy noise (for TD3-like behavior)
-  # target_noise_clip: 0.5                       # Target noise clipping
-  verbose: 1                                   # Verbosity level
+    mean: 0.0                                   # Mean of noise distribution
+    sigma: 0.1                                  # Standard deviation of noise
+  # target_policy_noise: 0.2                    # Target policy noise (for TD3-like behavior)
+  # target_noise_clip: 0.5                      # Target noise clipping
+  verbose: 1                                    # Verbosity level
   policy_kwargs:
     net_arch: 
       pi: [256, 256]  # 2 hidden layers, each with 256 units (for both actor and critic)
       qf: [256, 256]  # 2 hidden layers, each with 256 units (for both actor and critic)
     # activation_fn: torch.nn.ReLU  # Activation function for both actor and critic networks
   device: "cuda"                               # Device for training (auto, cpu, cuda)
-  _init_setup_model: true                      # Initialize model setup
+  _init_setup_model: true                      # for ddpg 
 
 
 # Callbacks configuration
 # Callbacks for logging, checkpointing, and evaluation during training
 callbacks:
   - type: "checkpoint"                         # Checkpoint callback type
-    save_freq: 200                             # Save frequency for checkpoints
+    save_freq: 500                             # Save frequency for checkpoints
     name_prefix: "ddpg_ardupilot"              # Checkpoint name prefix
+  - type: "tensorboard"                         # Checkpoint callback type
+    # save_freq: 500                             # Save frequency for checkpoints
+    # name_prefix: "ddpg_ardupilot"              # Checkpoint name prefix
 
 # Evaluation configuration
 evaluation_config:

@@ -204,9 +204,7 @@ class ArdupilotEnv(gym.Env):
             self.gazebo.pause_simulation()
             self.gazebo.transport_position(self.sitl.name, [self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]], euler_to_quaternion(None))
             self.gazebo.resume_simulation()
-            print(self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
             self.send_reset(master, self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
-        
         self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
         observation, info = self._get_observation()
         return observation, info  # observation, info
@@ -350,7 +348,6 @@ class ArdupilotEnv(gym.Env):
         info = {
             'reason': reason,
             'episode_step': self.episode_step,
-            'stable_time': self.eps_stable_time,
             'max_stable_time': self.max_stable_time,
         }
         reward = self._compute_reward(messages, reason)
@@ -545,21 +542,8 @@ class ArdupilotEnv(gym.Env):
                 + w.get("acc_yaw_w") * acc_err_yaw
             )
 
-            # Print all the error terms with proper formatting
-            print(f"🔎 Reward error terms:")
-            print(f"   pos_err_cm:{pos_err_cm:.3f}    ") # {huber(pos_err_cm,  tol["xy_tol"]) }")
-            print(f"   alt_err:   {alt_err:.3f}       ") # {huber(alt_err,     tol["alt_tol"])  }")
-            print(f"   vel_err_n: {vel_err_n:.3f}     ") # {huber(vel_err_n,   tol["vel_tol"])  }")
-            print(f"   vel_err_e: {vel_err_e:.3f}     ") # {huber(vel_err_e,   tol["vel_tol"])  }")
-            print(f"   vel_err_d: {vel_err_d:.3f}     ") # {huber(vel_err_d,   tol["vel_tol"])  }")
-            print(f"   acc_err_n: {acc_err_n:.3f}     ") # {huber(acc_err_n,   tol["acc_tol"])  }")
-            print(f"   acc_err_e: {acc_err_e:.3f}     ") # {huber(acc_err_e,   tol["acc_tol"])  }")
-            print(f"   acc_err_yaw: {acc_err_yaw:.3f} ") # {huber(acc_err_yaw, tol["acc_tol"])  }")
-            print(f"   acc_err_d: {acc_err_d:.3f}     ") # {huber(acc_err_d,   tol["acc_tol"])  }")
-
             # Decrease reward based on the errors
             r -= e_t
-            print(f" weighted error: {e_t}")
 
             if reason:
                 match reason:
@@ -571,17 +555,13 @@ class ArdupilotEnv(gym.Env):
                         r = self.reward_coefs.get("crash_penalty_flip")
                     case Termination.FAR:
                         r = self.reward_coefs.get("crash_penalty_far")
-
-            print(f"    reward after termination checks: {r}")
                     
             #  Timeout reward and has not crashed
             if self.episode_step >= self.max_episode_steps and r > 0:  
                 r += self.reward_coefs.get("success_reward")
-                
+
                 kappa = self.reward_coefs.get("stable_time_coef")
                 r += kappa * self.max_stable_time
-
-                print(f"    huber error if completing: {r}")
             
             return r
         else:
