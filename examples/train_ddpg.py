@@ -8,6 +8,7 @@ from rl_training.utils.utils import load_config, evaluate_agent
 from stable_baselines3 import DDPG
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.logger import configure
 from rl_training.utils.tb_callback import TensorboardCallback
 import numpy as np
 from rl_training.utils.utils import create_run_dir, save_config_copy, save_git_info, save_metrics_json
@@ -80,14 +81,15 @@ def train_ddpg_agent(env, config, run_dirs, checkpoint: str | None = None):
     env = Monitor(env)
 
     action_dim = env.action_space.shape[0]
-    action_noise_config = ddpg_config.get('action_noise', {})
-    action_noise = create_action_noise_from_config(action_noise_config, action_dim)
+    action_noise = create_action_noise_from_config(ddpg_config.get('action_noise'), action_dim)
 
     name_prefix = "ddpg_ardupilot"  
     for callback_config in callbacks_config:
         if callback_config.get('type') == 'checkpoint':
             name_prefix = callback_config.get('model_name_prefix', name_prefix)
             break
+
+    tb_run_name = training_config.get('tb_log_name', name_prefix)
 
     if checkpoint:
         model_zip, steps = _latest_ckpt_path(checkpoint, name_prefix)
@@ -96,7 +98,7 @@ def train_ddpg_agent(env, config, run_dirs, checkpoint: str | None = None):
 
     if model_zip:
         print(f"📦 Resuming from checkpoint: {model_zip}")
-        model = DDPG.load(model_zip, env=env, device=ddpg_config.get('device', "auto"))
+        model = DDPG.load(model_zip, env=env, device=ddpg_config.get('device'))
         model.action_noise = action_noise
 
         rb_path = _replay_for(model_zip, steps, name_prefix)
@@ -105,6 +107,9 @@ def train_ddpg_agent(env, config, run_dirs, checkpoint: str | None = None):
             model.load_replay_buffer(rb_path)
         else:
             print("⚠️ Replay buffer not found for this checkpoint; continuing without it.")
+        logger = configure(tensorboard_log, ["stdout", "csv", "tensorboard"])
+        model.set_logger(logger)
+        
     else:
         policy_kwargs = ddpg_config['policy_kwargs']
         model = DDPG(
@@ -147,9 +152,9 @@ def train_ddpg_agent(env, config, run_dirs, checkpoint: str | None = None):
 
 
     reset_flag = training_config.get('reset_num_timesteps')
-    if reset_flag is None and model_zip:
+    if not reset_flag and model_zip:
         reset_flag = False
-
+    print(f"REset flag {reset_flag}")
     ## Main learning code
     print("🎯 Training started...")
     model.learn(
@@ -158,81 +163,91 @@ def train_ddpg_agent(env, config, run_dirs, checkpoint: str | None = None):
         log_interval=10,
         progress_bar=training_config.get('progress_bar'),
         reset_num_timesteps=reset_flag,
+        tb_log_name=tb_run_name 
     )
 
     print("✅ Training completed!")
     return model
 
 def main():
-    # which instance is running
-    if len(sys.argv) == 1:
-        instance = 1
-    else:
-        try:
-            instance = int(sys.argv[1])
-        except ValueError:
-            print("Error: argument must be an integer (1 or 2).")
-            sys.exit(1)
-        if instance not in (1, 2):
-            print("Error: argument must be 1 or 2.")
-            sys.exit(1)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("instance", nargs="?", type=int, default=1)
+    parser.add_argument("--checkpoint", type=str, default=None,
+                        help="Path to model .zip OR a directory/file inside an existing run to resume.")
+    args = parser.parse_args()
+
+    if args.instance not in (1, 2):
+        print("Error: argument must be 1 or 2.")
+        sys.exit(1)
+    instance = args.instance
+    checkpoint = args.checkpoint
     print(f"Using value: {instance}")
-    
+
     print("🚁 ArdupilotEnv + Stable Baselines DDPG Experiment")
     print("=" * 70)
-    
+
     config_path = '/home/pid_rl/rl_training/configs/default_config.yaml'
-    
+
     try:
         config = load_config(config_path)
         env = ArdupilotEnv(config, instance=instance)
-        
-        # Prepare run directory structure
+
+        # Prepare (or reuse) run directory structure
         training_config = config.get('training_config', {})
         algorithm = training_config.get('algo')
         mission = training_config.get('mission')
         runs_base = training_config.get('runs_base')
 
-        run_dirs = create_run_dir(runs_base, algorithm, mission)
-        
-        print(f"📁 Run directory: {run_dirs['run_dir']}")
-        # Save config and git info snapshots
-        save_config_copy(config, run_dirs['cfg_path'])
-        save_git_info(run_dirs['git_path'])
-        
-
-        # Create the model 
-        model = train_ddpg_agent(env, config, run_dirs)
-        ##### OR
-        # model = train_ddpg_agent(env, config, run_dirs, checkpoint="/home/pid_rl/rl_training/runs/ddpg/hover/20250906_181428/models/ddpg_ardupilot_45600_steps.zip")  
-        
-        ##  model is ready
-        if model is not None:
-            results = evaluate_agent(model, env, config.get("evaluation_config").get("n_eval_episodes"))
-            # Save final model in run models dir
-            model_name_prefix = training_config.get('model_name_prefix')
-            model_path = os.path.join(run_dirs['models_dir'], f"{model_name_prefix}_final")
-            model.save(model_path)
-            print(f"\n💾 Model saved to: {model_path}")
-
-            save_metrics_json(results, run_dirs['metrics_path'])
-            try:
-                print("\n📂 Run directory contents:")
-                out = subprocess.check_output(["bash", "-lc", f"ls -la '{run_dirs['run_dir']}' && echo '---' && find '{run_dirs['run_dir']}' -maxdepth 2 -type d -print"], stderr=subprocess.STDOUT)
-                print(out.decode())
-            except Exception as e:
-                print(f"⚠️ Could not list run directory: {e}")
-            
+        # If resuming: reuse the original run root; else create a fresh stamped run
+        if checkpoint:
+            run_dirs = create_run_dir(runs_base, algorithm, mission, resume_from=checkpoint)
+            print("↩️  Resuming run:")
         else:
-            print("❌ Training failed - Stable Baselines3 not available")
-        
+            run_dirs = create_run_dir(runs_base, algorithm, mission)
+            print("🆕 Fresh run:")
+
+        print(f"📁 Run directory: {run_dirs['run_dir']}")
+
+        # Save config and git info only for fresh runs (avoid overwriting on resume)
+        if not checkpoint:
+            save_config_copy(config, run_dirs['cfg_path'])
+            save_git_info(run_dirs['git_path'])
+        else:
+            # If you still want snapshots on resume, write to *_resume timestamped files instead.
+            pass
+
+        # Train (fresh or resume)
+        model = train_ddpg_agent(env, config, run_dirs, checkpoint=checkpoint)
+
+        # # Evaluate & save final model
+        # if model is not None:
+        #     n_eval = (config.get("evaluation_config") or {}).get("n_eval_episodes", 5)
+        #     results = evaluate_agent(model, env, n_eval)
+
+        #     model_name_prefix = training_config.get('model_name_prefix', 'ddpg_ardupilot')
+        #     model_path = os.path.join(run_dirs['models_dir'], f"{model_name_prefix}_final")
+        #     model.save(model_path)
+        #     print(f"\n💾 Model saved to: {model_path}")
+
+        #     save_metrics_json(results, run_dirs['metrics_path'])
+        #     try:
+        #         print("\n📂 Run directory contents:")
+        #         out = subprocess.check_output([
+        #             "bash", "-lc",
+        #             f"ls -la '{run_dirs['run_dir']}' && echo '---' && find '{run_dirs['run_dir']}' -maxdepth 2 -type d -print"
+        #         ], stderr=subprocess.STDOUT)
+        #         print(out.decode())
+        #     except Exception as e:
+        #         print(f"⚠️ Could not list run directory: {e}")
+        # else:
+        #     print("❌ Training failed - Stable Baselines3 not available")
+
     except Exception as e:
         print(f"\n❌ Error occurred: {e}")
         import traceback
         traceback.print_exc()
-    
     finally:
-        # Clean up
         if 'env' in locals():
             env.close()
         print("\n🧹 Environment closed.")

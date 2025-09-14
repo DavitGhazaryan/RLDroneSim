@@ -304,7 +304,6 @@ class ArdupilotEnv(gym.Env):
     def step(self, action):
         self.episode_step += 1
         obs, reward, done, truncated, info = self._step(action)
-        print(f"Reward {reward}")
         return obs, reward, done, truncated, info
 
     def _step(self, action):

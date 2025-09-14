@@ -26,7 +26,7 @@ training_config:
   mission: "hover"                                
   model_name_prefix: "ddpg_ardupilot"          # Model name prefix
   progress_bar: true                           # Show training progress bar
-  reset_num_timesteps: true                    # Reset timestep counter
+  reset_num_timesteps: false                    # Reset timestep counter
 
 
 # DDPG algorithm parameters

@@ -2,6 +2,9 @@ import os
 import yaml
 from pathlib import Path
 import numpy as np
+# from email.mime.text import MIMEText
+# import smtplib
+
 
 ARDUPILOT_DIR = '/home/student/Dev/ardupilot'
 
@@ -199,22 +202,56 @@ def _safe_mkdir(path: str) -> str:
     os.makedirs(path, exist_ok=True)
     return path
 
-def create_run_dir(base_dir: str, algo: str, mission: str, exp_name: str | None = None) -> dict:
+def _find_run_root(p: Path) -> Path | None:
     """
-    Create a structured run directory tree:
-    runs/<algo>/<mission>/<YYYYMMDD_HHMMSS>_{exp_name}/ with subdirs tb/ and models/
+    Walk up until we find a folder containing 'tb' and/or 'models'.
+    Accepts: run root, 'tb', 'models', a model .zip, a replay .pkl, or an events file.
+    """
+    p = p if p.is_dir() else p.parent
+    for parent in [p, *p.parents]:
+        tb = parent / "tb"
+        models = parent / "models"
+        if tb.exists() or models.exists():
+            return parent
+    return None
 
-    Returns a dict with paths.
+def create_run_dir(base_dir: str, algo: str, mission: str,
+                   exp_name: str | None = None,
+                   resume_from: str | None = None) -> dict:
     """
+    Create or REUSE a structured run directory tree:
+      runs/<algo>/<mission>/<YYYYMMDD_HHMMSS>_{exp_name}/ with subdirs tb/ and models/
+
+    If `resume_from` is provided (can be a run folder, tb/, models/, a .zip, .pkl,
+    or a TensorBoard event file), we *reuse* that run (no new timestamp).
+    """
+    if resume_from:
+        cand = Path(resume_from).resolve()
+        run_root = _find_run_root(cand)
+        if run_root is None:
+            raise FileNotFoundError(f"Could not locate run root for: {resume_from}")
+        # Ensure expected subfolders exist
+        tb_dir = (run_root / "tb")
+        models_dir = (run_root / "models")
+        _safe_mkdir(tb_dir.as_posix())
+        _safe_mkdir(models_dir.as_posix())
+        return {
+            'run_dir': run_root.as_posix(),
+            'tb_dir': tb_dir.as_posix(),
+            'models_dir': models_dir.as_posix(),
+            'cfg_path': (run_root / 'cfg.yaml').as_posix(),
+            'git_path': (run_root / 'git.txt').as_posix(),
+            'metrics_path': (run_root / 'metrics.json').as_posix(),
+        }
+
+    # fresh run
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = f"_{exp_name}" if exp_name else ""
     run_dir = os.path.join(base_dir, algo, mission, f"{stamp}{suffix}")
     tb_dir = os.path.join(run_dir, "tb")
     models_dir = os.path.join(run_dir, "models")
-
     _safe_mkdir(tb_dir)
     _safe_mkdir(models_dir)
-
     return {
         'run_dir': run_dir,
         'tb_dir': tb_dir,
@@ -223,7 +260,6 @@ def create_run_dir(base_dir: str, algo: str, mission: str, exp_name: str | None 
         'git_path': os.path.join(run_dir, 'git.txt'),
         'metrics_path': os.path.join(run_dir, 'metrics.json'),
     }
-
 essential_config_keys = [
     'environment_config', 'ardupilot_config', 'gazebo_config', 'ddpg_params', 'training_config',
     'evaluation_config', 'callbacks',
@@ -275,7 +311,13 @@ def huber(e, delta):
 def nrm(e, tau):
     return min(abs(e)/tau, 10.0)
 
-# --------------------
-# Connection/Communication helpers
-# --------------------
+# def notify_email(subject, body):
+#     # set via env vars or your secrets manager
+#     host = os.environ["SMTP_HOST"]; port = int(os.environ.get("SMTP_PORT", "587"))
+#     user = os.environ["SMTP_USER"]; pwd = os.environ["SMTP_PASS"]
+#     to   = os.environ["ALERT_TO"]
+#     msg = MIMEText(body)
+#     msg["Subject"] = subject; msg["From"] = user; msg["To"] = to
+#     with smtplib.SMTP(host, port) as s:
+#         s.starttls(); s.login(user, pwd); s.sendmail(user, [to], msg.as_string())
 

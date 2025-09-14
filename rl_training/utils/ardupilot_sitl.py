@@ -31,10 +31,10 @@ class ArduPilotSITL:
         self.instance = instance
 
         self.process: Optional[subprocess.Popen] = None
-        self.child_processes: List[int] = []
-        self.log_threads: List[threading.Thread] = []  # Store references to logging threads
-        self._shutdown_event = threading.Event()  # Signal for thread shutdown
-        self._thread_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="SITL")
+        # self.child_processes: List[int] = []
+        # self.log_threads: List[threading.Thread] = []  # Store references to logging threads
+        # self._shutdown_event = threading.Event()  # Signal for thread shutdown
+        # self._thread_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="SITL")
 
         # cached connections
         self._mavlink_master: Optional[mavutil.mavlink_connection] = None  # Cached low level connection 
@@ -66,7 +66,7 @@ class ArduPilotSITL:
         self.timeout           = config.get('timeout')
         self.min_startup_delay = config.get('min_startup_delay')
         self.master_port       = config.get('master_port')  # Configurable MAVLink port
-        self.mavsdk_port       = config.get('mavsdk_port')  # Configurable MAVSDK port
+        # self.mavsdk_port       = config.get('mavsdk_port')  # Configurable MAVSDK port
         self.port_check_timeout = config.get('port_check_timeout')  # Timeout for port availability
 
 
@@ -98,10 +98,10 @@ class ArduPilotSITL:
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             preexec_fn=os.setsid, cwd=str(self.ardupilot_path)
         )
-        self._shutdown_event.clear()  # set to False, enables logging threads to run
-        self._start_log_threads()
+        # self._shutdown_event.clear()  # set to False, enables logging threads to run
+        # self._start_log_threads()
         self._wait_for_startup()      # ensures that the process is running and the port(s) are available
-        self._track_child_processes()
+        # self._track_child_proceseses()
 
         #logger.debug("Establishing connections...")
         self._get_mavlink_connection()
@@ -178,8 +178,8 @@ class ArduPilotSITL:
             # Wait for mode change confirmation with non-blocking reads
             start_time = time.time()
             while time.time() - start_time < timeout:
-                if self._shutdown_event.is_set():  # ???
-                    return False
+                # if self._shutdown_event.is_set():  # ???
+                #     return False
                     
                 # Non-blocking read
                 msg = master.recv_match(type='HEARTBEAT', blocking=False, timeout=0.1)
@@ -289,15 +289,15 @@ class ArduPilotSITL:
             self.process.wait(timeout=5)
         except ProcessLookupError:
             pass
-        for pid in list(self.child_processes):
-            try:
-                psutil.Process(pid).terminate()
-            except:
-                pass
+        # for pid in list(self.child_processes):
+        #     try:
+        #         psutil.Process(pid).terminate()
+        #     except:
+        #         pass
         
         # Clean up logging threads gracefully
-        if hasattr(self, '_shutdown_event'):
-            self._shutdown_event.set()  # Signal threads to stop
+        # if hasattr(self, '_shutdown_event'):
+        #     self._shutdown_event.set()  # Signal threads to stop
         
         if hasattr(self, 'log_threads') and self.log_threads:
             for thread in self.log_threads:
@@ -385,40 +385,41 @@ class ArduPilotSITL:
 
         if self.instance == 2:
             self.master_port += 10
-            self.mavsdk_port += 10
+            # self.mavsdk_port += 10
 
 
-        if self.master_port is not None and self.mavsdk_port is not None:
-            cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port} --out udp:127.0.0.1:{self.mavsdk_port}')
+        if self.master_port is not None:
+            # cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port} --out udp:127.0.0.1:{self.mavsdk_port}')
+            cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port}')
         else:
             cmd.append(f'--mavproxy-args={self.mavproxy_args}')
         return cmd
 
-    def _start_log_threads(self):
-        assert self.process is not None
-        def reader(pipe, level):
-            try:
-                while not self._shutdown_event.is_set():
-                    line = pipe.readline()
-                    if not line:  # EOF
-                        break
-                    logger.log(level, line.decode().rstrip())
-            except Exception:
-                pass  # Ignore errors during shutdown
-            finally:
-                try:
-                    pipe.close()
-                except:
-                    pass
+    # def _start_log_threads(self):
+    #     assert self.process is not None
+    #     def reader(pipe, level):
+    #         try:
+    #             while not self._shutdown_event.is_set():
+    #                 line = pipe.readline()
+    #                 if not line:  # EOF
+    #                     break
+    #                 logger.log(level, line.decode().rstrip())
+    #         except Exception:
+    #             pass  # Ignore errors during shutdown
+    #         finally:
+    #             try:
+    #                 pipe.close()
+    #             except:
+    #                 pass
         
-        # Create non-daemon threads and store references
-        stdout_thread = threading.Thread(target=reader, args=(self.process.stdout, logging.INFO), daemon=True)
-        stderr_thread = threading.Thread(target=reader, args=(self.process.stderr, logging.ERROR), daemon=True)
+    #     # Create non-daemon threads and store references
+    #     stdout_thread = threading.Thread(target=reader, args=(self.process.stdout, logging.INFO), daemon=True)
+    #     stderr_thread = threading.Thread(target=reader, args=(self.process.stderr, logging.ERROR), daemon=True)
         
-        stdout_thread.start()
-        stderr_thread.start()
+    #     stdout_thread.start()
+    #     stderr_thread.start()
         
-        self.log_threads = [stdout_thread, stderr_thread]
+    #     self.log_threads = [stdout_thread, stderr_thread]
 
     def _wait_for_startup(self):
         """
@@ -463,18 +464,18 @@ class ArduPilotSITL:
             logger.error(f"Master port {self.master_port} did not become available within {self.port_check_timeout}s")
             return False
 
-        #logger.debug(f"Waiting for MAVSDK port {self.mavsdk_port} to become available...")
-        ports_available = False
-        start_time = time.time()
-        while time.time() - start_time < self.port_check_timeout:
-            if self._check_port_available(port=self.mavsdk_port):
-                #logger.debug(f"MAVSDK port {self.mavsdk_port} is now available")
-                ports_available = True
-                break
-            time.sleep(0.5)
-        if not ports_available:
-            logger.error(f"MAVSDK port {self.mavsdk_port} did not become available within {self.port_check_timeout}s")
-            return False
+        # #logger.debug(f"Waiting for MAVSDK port {self.mavsdk_port} to become available...")
+        # ports_available = False
+        # start_time = time.time()
+        # while time.time() - start_time < self.port_check_timeout:
+        #     if self._check_port_available(port=self.mavsdk_port):
+        #         #logger.debug(f"MAVSDK port {self.mavsdk_port} is now available")
+        #         ports_available = True
+        #         break
+        #     time.sleep(0.5)
+        # if not ports_available:
+        #     logger.error(f"MAVSDK port {self.mavsdk_port} did not become available within {self.port_check_timeout}s")
+        #     return False
         return True
     
     def _check_port_available(self, host: str = '127.0.0.1',
@@ -499,16 +500,16 @@ class ArduPilotSITL:
         finally:
             sock.close()
 
-    def _track_child_processes(self):
-        """
-        Any external processes that are started by the SITL process will be tracked here
-        """
-        try:
-            parent = psutil.Process(self.process.pid)
-            self.child_processes = [c.pid for c in parent.children(recursive=True)]
-            #logger.debug(f"Tracked {len(self.child_processes)} child processes")
-        except Exception as e:
-            logger.warning(f"Could not track child processes: {e}")
+    # def _track_child_processes(self):
+    #     """
+    #     Any external processes that are started by the SITL process will be tracked here
+    #     """
+    #     try:
+    #         parent = psutil.Process(self.process.pid)
+    #         self.child_processes = [c.pid for c in parent.children(recursive=True)]
+    #         #logger.debug(f"Tracked {len(self.child_processes)} child processes")
+    #     except Exception as e:
+    #         logger.warning(f"Could not track child processes: {e}")
 
     # utils for connections
     def _get_mavlink_connection(self):
