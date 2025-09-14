@@ -34,7 +34,6 @@ def create_action_noise_from_config(action_noise_config, action_dim):
             sigma=0.1 * np.ones(action_dim)
         )
 
-
 def _latest_ckpt_path(path_like: str, name_prefix: str):
     """
     Accepts a directory or a specific .zip path.
@@ -48,7 +47,6 @@ def _latest_ckpt_path(path_like: str, name_prefix: str):
         steps = int(m.group(1)) if m else None
         return path_like, steps
     return None, None
-
 
 def _replay_for(model_zip_path: str, steps: int, name_prefix: str):
     """

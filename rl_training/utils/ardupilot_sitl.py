@@ -30,14 +30,14 @@ class ArduPilotSITL:
         self.config = config
         self.instance = instance
 
-        self.process: Optional[subprocess.Popen] = None
+        self.process= None
         # self.child_processes: List[int] = []
         # self.log_threads: List[threading.Thread] = []  # Store references to logging threads
         # self._shutdown_event = threading.Event()  # Signal for thread shutdown
         # self._thread_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="SITL")
 
         # cached connections
-        self._mavlink_master: Optional[mavutil.mavlink_connection] = None  # Cached low level connection 
+        self._mavlink_master = None  # Cached low level connection 
 
         # required
         self.ardupilot_path = Path(config['ardupilot_path'])
@@ -95,24 +95,13 @@ class ArduPilotSITL:
         #logger.debug(f"{cmd}")
 
         self.process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             preexec_fn=os.setsid, cwd=str(self.ardupilot_path)
         )
-        # self._shutdown_event.clear()  # set to False, enables logging threads to run
-        # self._start_log_threads()
+
         self._wait_for_startup()      # ensures that the process is running and the port(s) are available
-        # self._track_child_proceseses()
-
-        #logger.debug("Establishing connections...")
         self._get_mavlink_connection()
-        #logger.debug("MAVLink connection established")
-
-        try:
-            self._set_mode_sync('GUIDED')
-        except Exception as e:
-            logger.warning(f"Error setting GUIDED mode after startup: {e}")
-
-        #logger.debug("SITL started successfully.")
+        self._set_mode_sync('GUIDED')
 
     def set_message_interval(self, master, msg_id, hz):
         # master = self._get_mavlink_connection()
@@ -312,7 +301,7 @@ class ArduPilotSITL:
             self.log_threads.clear()
         
         self.process = None
-        self.child_processes.clear()
+        # self.child_processes.clear()
         #logger.debug("SITL stopped.")
 
     # utils for the SITL
@@ -425,8 +414,6 @@ class ArduPilotSITL:
         """
         Wait for SITL to initialize by checking both process health and port availability.
         """
-        #logger.debug("Waiting for SITL to initialize...")
-        #logger.debug("   ")
         
         start = time.time()
 
@@ -435,12 +422,7 @@ class ArduPilotSITL:
                 out, err = self.process.communicate(timeout=1)
                 raise RuntimeError(f"SITL crashed during startup:\n{err.decode()}\n{out.decode()}")
             time.sleep(0.5)
-        #logger.debug(f"Minimum startup delay of {self.min_startup_delay}s completed")
-        
-        
-        # Wait for the ports to become available
 
-        # Wait for the ports to become available
         if not self._wait_for_ports():
             if self.process.poll() is not None:
                 out, err = self.process.communicate(timeout=1)
@@ -526,7 +508,6 @@ class ArduPilotSITL:
             addr = f'udp:127.0.0.1:{self.master_port}'
             
             try:
-                print("new connection")
                 self._mavlink_master = mavutil.mavlink_connection(addr)
                 hb = self._mavlink_master.wait_heartbeat()
                 self._mavlink_master.target_system = hb.get_srcSystem()
@@ -538,7 +519,7 @@ class ArduPilotSITL:
                 PID_TUNING = 194
                 NAV_CONTROLLER_OUTPUT = 62
 
-                RATE_HZ = 100    # TODO 
+                RATE_HZ = 20     
                 self.set_message_interval(self._mavlink_master, PID_TUNING, RATE_HZ)
                 self.set_message_interval(self._mavlink_master, NAV_CONTROLLER_OUTPUT, RATE_HZ)
 
@@ -546,7 +527,6 @@ class ArduPilotSITL:
                 self.set_param_and_confirm(self._mavlink_master, "GCS_PID_MASK", GCS_PID_MASK_VALUE)
 
                 print(f"Established MAVLink connection to {addr}")
-                #logger.debug(f"Established MAVLink connection to {addr}")
             except Exception as e:
                 self._mavlink_master = None
                 raise RuntimeError(f"Failed to establish MAVLink connection to {addr}: {e}")

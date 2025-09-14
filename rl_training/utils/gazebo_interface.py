@@ -75,19 +75,12 @@ class GazeboInterface:
         try:
             self.process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                preexec_fn=os.setsid
-            )
-            
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                preexec_fn=os.setsid)
+
             self._wait_for_startup()
             self.is_started = True
-            #logger.debug("Gazebo simulation started successfully!")
-
-            #logger.debug("Timer thread started")
-        except FileNotFoundError:
-            logger.error("gz command not found. Please install Gazebo Harmonic or newer.")
-            raise
         except Exception as e:
             logger.exception("Failed to start Gazebo")
             raise RuntimeError(f"Failed to start Gazebo: {e}")
@@ -144,11 +137,11 @@ class GazeboInterface:
     def close(self):
         if self.process is None:
             return
-        #logger.debug("Stopping Gazebo simulation...")
         
         try:
             if self.process.poll() is None:
                 os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+                out, err = self.process.communicate(timeout=1)
                 try:
                     self.process.wait(timeout=10)
                 except subprocess.TimeoutExpired:
@@ -193,7 +186,7 @@ class GazeboInterface:
                     return
             except subprocess.CalledProcessError:
                 pass
-            time.sleep(0.1)
+            time.sleep(0.5)
 
         self.close()
         raise RuntimeError(f"Gazebo startup timeout after {10} seconds")

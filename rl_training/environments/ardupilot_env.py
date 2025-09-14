@@ -76,18 +76,6 @@ class ArdupilotEnv(gym.Env):
         self.observation_space = self._define_observation_space()
         self.action_space = self._define_action_space()
 
-        # Log space information for debugging
-        #logger.info(f"🔧 Environment spaces initialized:")
-        #logger.info(f"   Observation space: {self.observation_space}")
-        #logger.info(f"   Action space: {self.action_space}")
-        #logger.info(f"   Observable gains: {self.observable_gains}")
-        #logger.info(f"   Observable states: {self.observable_states}")
-        #logger.info(f"   Action gains: {self.action_gains}")
-        
-        # obs_mapping = self.get_observation_key_mapping()
-        # action_mapping = self.get_action_key_mapping()
-        #logger.info(f"   Observation mapping: {obs_mapping}")
-        #logger.info(f"   Action mapping: {action_mapping}")
         
     def _define_observation_space(self):
         """
@@ -149,16 +137,15 @@ class ArdupilotEnv(gym.Env):
 
         if not self.initialized:
             #logger.info("🌎 Launching Gazebo simulation...")
-            self.gazebo.start_simulation()
-            self.gazebo._wait_for_startup()
+            self.gazebo.start_simulation()   # waiting is done internally.
             self.gazebo.resume_simulation()
             #logger.debug("✅ Gazebo initialized")
             #logger.debug("🚁 Starting ArduPilot SITL...")
             self.sitl.start_sitl()
             info = self.sitl.get_process_info()
+            print(info)
             #logger.debug(f"✅ SITL running (PID {info['pid']})")
             self.initialized = True
-            time.sleep(5)
 
             ## Setup Mission
             master = self.sitl._get_mavlink_connection()  
@@ -397,7 +384,7 @@ class ArdupilotEnv(gym.Env):
                 continue
             if hb.system_status == mavutil.mavlink.MAV_STATE_STANDBY:
                 break
-            time.sleep(0.01)
+            time.sleep(0.1)
         if time.time() - t0 >= timeout:
             raise TimeoutError("Failed to arm the drone")
         

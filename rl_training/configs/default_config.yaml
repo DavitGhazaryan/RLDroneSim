@@ -130,7 +130,6 @@ ardupilot_config:
   mavproxy_args: null                          # Additional MAVProxy arguments
   timeout: 30.0                                # SITL startup timeout
   min_startup_delay: 5.0                       # Minimum startup delay
-  mavsdk_port: 14550   # +10 for I 1           # MAVSDK port    
   master_port: 14551   # +10 for I 1           # MAVLink master port
   port_check_timeout: 30.0                     # Port availability timeout
 
