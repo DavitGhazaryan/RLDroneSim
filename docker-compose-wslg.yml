@@ -53,7 +53,7 @@ services:
       - ./copied/mode_guided.cpp:/home/pid_rl/ardupilot/ArduCopter/mode_guided.cpp
       - ./copied/lua_scripts:/home/pid_rl/ardupilot/scripts
       - ./copied/tmp_build.sh:/home/pid_rl/ardupilot/tmp_build.sh
-      - ./copied/ardupilot_sitl.py:/home/pid_rl/ardupilot/Tools/autotest/sim_vehicle.py
+      - ./copied/sim_vehicle.py:/home/pid_rl/ardupilot/Tools/autotest/sim_vehicle.py
 
 
     devices:

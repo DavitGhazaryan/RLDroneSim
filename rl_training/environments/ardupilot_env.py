@@ -143,18 +143,18 @@ class ArdupilotEnv(gym.Env):
             #logger.debug("🚁 Starting ArduPilot SITL...")
             self.sitl.start_sitl()
             info = self.sitl.get_process_info()
-            print(info)
             #logger.debug(f"✅ SITL running (PID {info['pid']})")
             self.initialized = True
 
             ## Setup Mission
             master = self.sitl._get_mavlink_connection()  
             self.arm_drone(master)
-            time.sleep(5)
+            time.sleep(10)
 
             hb = master.wait_heartbeat()
             messages = master.messages
     
+            
             for gain in self.action_gains:
                 self.ep_initial_gains[gain] = self.sitl.get_param(master, gain)
                 self.first_initial_gains[gain] = self.sitl.get_param(master, gain)

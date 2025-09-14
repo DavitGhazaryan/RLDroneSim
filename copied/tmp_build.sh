@@ -68,7 +68,4 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 log "Compiling with make -j${JOBS}..."
 make -j "${JOBS}"
 
-popd >/dev/null
-popd >/dev/null
-
 log "All done ✔"

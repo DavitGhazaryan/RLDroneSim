@@ -31,10 +31,6 @@ class ArduPilotSITL:
         self.instance = instance
 
         self.process= None
-        # self.child_processes: List[int] = []
-        # self.log_threads: List[threading.Thread] = []  # Store references to logging threads
-        # self._shutdown_event = threading.Event()  # Signal for thread shutdown
-        # self._thread_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="SITL")
 
         # cached connections
         self._mavlink_master = None  # Cached low level connection 
@@ -59,14 +55,11 @@ class ArduPilotSITL:
         self.no_configure      = config.get('no_configure')
         self.no_mavproxy       = config.get('no_mavproxy')
         self.udp               = config.get('udp')
-        self.udp_out           = config.get('udp_out')
         self.map               = config.get('map')
         self.console           = config.get('console')
-        self.mavproxy_args     = config.get('mavproxy_args')
         self.timeout           = config.get('timeout')
         self.min_startup_delay = config.get('min_startup_delay')
         self.master_port       = config.get('master_port')  # Configurable MAVLink port
-        # self.mavsdk_port       = config.get('mavsdk_port')  # Configurable MAVSDK port
         self.port_check_timeout = config.get('port_check_timeout')  # Timeout for port availability
 
 
@@ -91,21 +84,19 @@ class ArduPilotSITL:
         if self.is_running():
             raise RuntimeError("SITL already running")
         cmd = self._build_command()
-        #logger.debug(f"Launching SITL")
-        #logger.debug(f"{cmd}")
 
         self.process = subprocess.Popen(
             cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             preexec_fn=os.setsid, cwd=str(self.ardupilot_path),
         )
-
         self._wait_for_startup()      # ensures that the process is running and the port(s) are available
         self._get_mavlink_connection()
         self._set_mode_sync('GUIDED')
 
     def set_message_interval(self, master, msg_id, hz):
         # master = self._get_mavlink_connection()
-        interval_us = int(1e6 / hz)
+        interval_us = 0 if hz<=0 else int(1e6/hz)
+
         master.mav.command_long_send(
             master.target_system, master.target_component,
             mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
@@ -115,7 +106,6 @@ class ArduPilotSITL:
 
     def set_param_and_confirm(self, master, name_str, value, timeout=3.0):
         name_bytes = name_str.encode("ascii", "ignore")
-
         is_float = isinstance(value, float)
         ptype = (mavutil.mavlink.MAV_PARAM_TYPE_REAL32
                 if is_float else mavutil.mavlink.MAV_PARAM_TYPE_INT32)
@@ -126,13 +116,21 @@ class ArduPilotSITL:
         t0 = time.time()
         while time.time() - t0 < timeout:
             msg = master.recv_match(type="PARAM_VALUE", blocking=True, timeout=timeout)
-            print(msg)
             if not msg:
                 break
             pid = (msg.param_id.decode("ascii","ignore") if isinstance(msg.param_id,(bytes,bytearray))
                 else str(msg.param_id)).rstrip("\x00")
             if pid == name_str:
+                if abs(float(msg.param_value) - float(value)) <= 0.01:
+                    return True  # confirmed exact (within tol)
+                else:
+                    print(msg)
+                    print(msg.param_value)
+                    print(value)
                 return True
+    
+            else: 
+                print(f"another one was requested here {pid} , {name_str}")
         print("Param is NOT SET")
         return False
 
@@ -194,6 +192,7 @@ class ArduPilotSITL:
 
         t0 = time.time()
         last = 0.0
+        # print(f"REquested {name16}")
         while time.time() - t0 < timeout:
             if time.time() - last >= resend_every:
                 master.mav.param_request_read_send(master.target_system, master.target_component, name_bytes, -1)
@@ -201,10 +200,14 @@ class ArduPilotSITL:
             msg = master.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.5)
             if not msg:
                 continue
+            # print(msg)
             pid = (msg.param_id.decode("ascii", "ignore") if isinstance(msg.param_id, (bytes, bytearray))
                 else str(msg.param_id)).rstrip("\x00")
             if pid == name16:
                 return msg.param_value
+            else:
+                print(f"another one was requested here {pid}, {name16}")
+                print(msg)
             
         raise TimeoutError(f"Timeout: param {param_name} not received")
    
@@ -376,41 +379,9 @@ class ArduPilotSITL:
 
         if self.instance == 2:
             self.master_port += 10
-            # self.mavsdk_port += 10
 
-
-        if self.master_port is not None:
-            # cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port} --out udp:127.0.0.1:{self.mavsdk_port}')
-            cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port}')
-        else:
-            cmd.append(f'--mavproxy-args={self.mavproxy_args}')
+        print(cmd)
         return cmd
-
-    # def _start_log_threads(self):
-    #     assert self.process is not None
-    #     def reader(pipe, level):
-    #         try:
-    #             while not self._shutdown_event.is_set():
-    #                 line = pipe.readline()
-    #                 if not line:  # EOF
-    #                     break
-    #                 logger.log(level, line.decode().rstrip())
-    #         except Exception:
-    #             pass  # Ignore errors during shutdown
-    #         finally:
-    #             try:
-    #                 pipe.close()
-    #             except:
-    #                 pass
-        
-    #     # Create non-daemon threads and store references
-    #     stdout_thread = threading.Thread(target=reader, args=(self.process.stdout, logging.INFO), daemon=True)
-    #     stderr_thread = threading.Thread(target=reader, args=(self.process.stderr, logging.ERROR), daemon=True)
-        
-    #     stdout_thread.start()
-    #     stderr_thread.start()
-        
-    #     self.log_threads = [stdout_thread, stderr_thread]
 
     def _wait_for_startup(self):
         """
@@ -424,7 +395,6 @@ class ArduPilotSITL:
                 out, err = self.process.communicate(timeout=1)
                 raise RuntimeError(f"SITL crashed during startup:\n{err.decode()}\n{out.decode()}")
             time.sleep(0.5)
-
         if not self._wait_for_ports():
             if self.process.poll() is not None:
                 out, err = self.process.communicate(timeout=1)
@@ -434,8 +404,6 @@ class ArduPilotSITL:
         
     def _wait_for_ports(self) -> bool:
 
-        #logger.debug("   ")
-        #logger.debug(f"Waiting for Master port {self.master_port} to become available...")
         ports_available = False
         start_time = time.time()
         while time.time() - start_time < self.port_check_timeout:
@@ -448,18 +416,6 @@ class ArduPilotSITL:
             logger.error(f"Master port {self.master_port} did not become available within {self.port_check_timeout}s")
             return False
 
-        # #logger.debug(f"Waiting for MAVSDK port {self.mavsdk_port} to become available...")
-        # ports_available = False
-        # start_time = time.time()
-        # while time.time() - start_time < self.port_check_timeout:
-        #     if self._check_port_available(port=self.mavsdk_port):
-        #         #logger.debug(f"MAVSDK port {self.mavsdk_port} is now available")
-        #         ports_available = True
-        #         break
-        #     time.sleep(0.5)
-        # if not ports_available:
-        #     logger.error(f"MAVSDK port {self.mavsdk_port} did not become available within {self.port_check_timeout}s")
-        #     return False
         return True
     
     def _check_port_available(self, host: str = '127.0.0.1',
@@ -472,7 +428,6 @@ class ArduPilotSITL:
         """
         if port is None:
             raise ValueError("Port is required")
-
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.settimeout(timeout)
         try:
@@ -484,18 +439,7 @@ class ArduPilotSITL:
         finally:
             sock.close()
 
-    # def _track_child_processes(self):
-    #     """
-    #     Any external processes that are started by the SITL process will be tracked here
-    #     """
-    #     try:
-    #         parent = psutil.Process(self.process.pid)
-    #         self.child_processes = [c.pid for c in parent.children(recursive=True)]
-    #         #logger.debug(f"Tracked {len(self.child_processes)} child processes")
-    #     except Exception as e:
-    #         logger.warning(f"Could not track child processes: {e}")
 
-    # utils for connections
     def _get_mavlink_connection(self):
         """
         Get or create a cached MAVLink connection.
@@ -508,9 +452,9 @@ class ArduPilotSITL:
         """
         if self._mavlink_master is None or not hasattr(self._mavlink_master, 'target_system'):
             addr = f'udp:127.0.0.1:{self.master_port}'
-            
+            # addr = "udp:127.0.0.1:5760"
             try:
-                self._mavlink_master = mavutil.mavlink_connection(addr)
+                self._mavlink_master = mavutil.mavlink_connection(addr, dialect="ardupilotmega")
                 hb = self._mavlink_master.wait_heartbeat()
                 self._mavlink_master.target_system = hb.get_srcSystem()
 
@@ -520,10 +464,14 @@ class ArduPilotSITL:
                 # channels
                 PID_TUNING = 194
                 NAV_CONTROLLER_OUTPUT = 62
+                LOCAL_POSITION_NED = 32
+                ATTITUDE = 30
 
                 RATE_HZ = 20     
                 self.set_message_interval(self._mavlink_master, PID_TUNING, RATE_HZ)
                 self.set_message_interval(self._mavlink_master, NAV_CONTROLLER_OUTPUT, RATE_HZ)
+                self.set_message_interval(self._mavlink_master, LOCAL_POSITION_NED, RATE_HZ)
+                self.set_message_interval(self._mavlink_master, ATTITUDE, RATE_HZ)
 
                 GCS_PID_MASK_VALUE = 0xFFFF
                 self.set_param_and_confirm(self._mavlink_master, "GCS_PID_MASK", GCS_PID_MASK_VALUE)

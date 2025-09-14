@@ -123,19 +123,18 @@ ardupilot_config:
   clean: true                                  # Clean build before starting
   no_rebuild: true                             # Skip rebuilding
   no_configure: true                           # Skip configuration
-  no_mavproxy: false                           # Launch MAVProxy
+  no_mavproxy: true                           # Launch MAVProxy
   udp: true                                    # Use UDP communication
   map: false                                   # Show map interface
   console: false                               # Show console interface
-  mavproxy_args: null                          # Additional MAVProxy arguments
+  master_port: 5760                            # default udp port
   timeout: 30.0                                # SITL startup timeout
   min_startup_delay: 5.0                       # Minimum startup delay
-  master_port: 14551   # +10 for I 1           # MAVLink master port
   port_check_timeout: 30.0                     # Port availability timeout
 
 # Gazebo configuration
 # control the wind from the sdf file directly
 gazebo_config:
   sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  # always write the version for 1 instance
-  gui: false                                         
+  gui: true                                         
   verbose: false          # enables -v 4; internal logging of gz            

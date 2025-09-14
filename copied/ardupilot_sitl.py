@@ -59,10 +59,8 @@ class ArduPilotSITL:
         self.no_configure      = config.get('no_configure')
         self.no_mavproxy       = config.get('no_mavproxy')
         self.udp               = config.get('udp')
-        self.udp_out           = config.get('udp_out')
         self.map               = config.get('map')
         self.console           = config.get('console')
-        self.mavproxy_args     = config.get('mavproxy_args')
         self.timeout           = config.get('timeout')
         self.min_startup_delay = config.get('min_startup_delay')
         self.master_port       = config.get('master_port')  # Configurable MAVLink port
@@ -376,41 +374,8 @@ class ArduPilotSITL:
 
         if self.instance == 2:
             self.master_port += 10
-            # self.mavsdk_port += 10
 
-
-        if self.master_port is not None:
-            # cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port} --out udp:127.0.0.1:{self.mavsdk_port}')
-            cmd.append(f'--mavproxy-args=--out udp:127.0.0.1:{self.master_port}')
-        else:
-            cmd.append(f'--mavproxy-args={self.mavproxy_args}')
         return cmd
-
-    # def _start_log_threads(self):
-    #     assert self.process is not None
-    #     def reader(pipe, level):
-    #         try:
-    #             while not self._shutdown_event.is_set():
-    #                 line = pipe.readline()
-    #                 if not line:  # EOF
-    #                     break
-    #                 logger.log(level, line.decode().rstrip())
-    #         except Exception:
-    #             pass  # Ignore errors during shutdown
-    #         finally:
-    #             try:
-    #                 pipe.close()
-    #             except:
-    #                 pass
-        
-    #     # Create non-daemon threads and store references
-    #     stdout_thread = threading.Thread(target=reader, args=(self.process.stdout, logging.INFO), daemon=True)
-    #     stderr_thread = threading.Thread(target=reader, args=(self.process.stderr, logging.ERROR), daemon=True)
-        
-    #     stdout_thread.start()
-    #     stderr_thread.start()
-        
-    #     self.log_threads = [stdout_thread, stderr_thread]
 
     def _wait_for_startup(self):
         """
