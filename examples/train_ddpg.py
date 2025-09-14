@@ -91,6 +91,10 @@ def train_ddpg_agent(env, config, run_dirs, checkpoint: str | None = None):
 
     if checkpoint:
         model_zip, steps = _latest_ckpt_path(checkpoint, name_prefix)
+        existing = [d for d in os.listdir(tensorboard_log)
+                if d.startswith(tb_run_name) and os.path.isdir(os.path.join(tensorboard_log, d))]
+        run_idx = len(existing)
+        tb_run_name = f"{tb_run_name}_{run_idx}"
     else:
         model_zip, steps = (None, None)
 
@@ -105,8 +109,6 @@ def train_ddpg_agent(env, config, run_dirs, checkpoint: str | None = None):
             model.load_replay_buffer(rb_path)
         else:
             print("⚠️ Replay buffer not found for this checkpoint; continuing without it.")
-        logger = configure(tensorboard_log, ["stdout", "csv", "tensorboard"])
-        model.set_logger(logger)
         
     else:
         policy_kwargs = ddpg_config['policy_kwargs']
