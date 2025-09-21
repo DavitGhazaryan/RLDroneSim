@@ -14,10 +14,11 @@
       <render_engine>ogre2</render_engine>
     </plugin>
     <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
-    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
     <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
     <plugin filename="gz-sim-navsat-system" name="gz::sim::systems::NavSat"/>
 
+    <!-- Turn off for efficiency -->
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
 
     <!-- Geographic coordinates -->
     <spherical_coordinates>
@@ -40,61 +41,20 @@
             </plane>
           </geometry>
         </collision>
-        <visual name="visual">
-          <geometry>
-            <plane>
-              <normal>0 0 1</normal>
-              <size>100 100</size>
-            </plane>
-          </geometry>
-          <material>
-            <ambient>0.7 0.7 0.7 1</ambient>
-            <diffuse>0.7 0.7 0.7 1</diffuse>
-          </material>
-        </visual>
+
       </link>
     </model>
 
-    <!-- Sun (light source) -->
-    <include>
-      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Sun</uri>
-    </include>
-
-    <!-- Visual axes for orientation -->
-    <model name="axes">
-      <static>true</static>
-      <link name="link">
-        <visual name="x_axis">
-          <pose>5 0 0.1 0 0 0</pose>
-          <geometry><box><size>10 0.02 0.02</size></box></geometry>
-          <material><ambient>1 0 0 1</ambient></material>
-        </visual>
-        <visual name="y_axis">
-          <pose>0 5 0.1 0 0 0</pose>
-          <geometry><box><size>0.02 10 0.02</size></box></geometry>
-          <material><ambient>0 1 0 1</ambient></material>
-        </visual>
-        <visual name="z_axis">
-          <pose>0 0 5.1 0 0 0</pose>
-          <geometry><box><size>0.02 0.02 10</size></box></geometry>
-          <material><ambient>0 0 1 1</ambient></material>
-        </visual>
-      </link>
-    </model>
 
     <!-- Load drone model -->
     <include>
       <uri>model://iris_with_ardupilot</uri>
       <pose degrees="true">0 0 0.195 0 0 90</pose>
-      <!-- <enable_wind>true</enable_wind> -->
-  
     </include>
 
     <wind>
       <linear_velocity>0 25 0</linear_velocity>
     </wind>
-
-    <!-- Load the plugin for the wind -->
     <plugin
       filename="gz-sim-wind-effects-system"
       name="gz::sim::systems::WindEffects">
@@ -112,7 +72,7 @@
           </noise>
         </magnitude>
         <direction>
-          <time_for_rise>30</time_for_rise>
+          <time_for_rise>3</time_for_rise>
           <sin>
             <amplitude>5</amplitude>
             <period>20</period>

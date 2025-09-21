@@ -86,8 +86,8 @@ class ArduPilotSITL:
         cmd = self._build_command()
 
         self.process = subprocess.Popen(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            preexec_fn=os.setsid, cwd=str(self.ardupilot_path),
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=False,
+            cwd=str(self.ardupilot_path),
         )
         self._wait_for_startup()      # ensures that the process is running and the port(s) are available
         self._get_mavlink_connection()
@@ -117,7 +117,8 @@ class ArduPilotSITL:
         while time.time() - t0 < timeout:
             msg = master.recv_match(type="PARAM_VALUE", blocking=True, timeout=timeout)
             if not msg:
-                break
+                print("msg missed in set")
+                continue
             pid = (msg.param_id.decode("ascii","ignore") if isinstance(msg.param_id,(bytes,bytearray))
                 else str(msg.param_id)).rstrip("\x00")
             if pid == name_str:
@@ -125,8 +126,6 @@ class ArduPilotSITL:
                     return True  # confirmed exact (within tol)
                 else:
                     print(msg)
-                    print(msg.param_value)
-                    print(value)
                 return True
     
             else: 
@@ -189,7 +188,6 @@ class ArduPilotSITL:
 
         name16 = param_name[:16]  # enforce MAVLink 16-char limit
         name_bytes = name16.encode("ascii", "ignore")
-
         t0 = time.time()
         last = 0.0
         # print(f"REquested {name16}")
@@ -199,8 +197,8 @@ class ArduPilotSITL:
                 last = time.time()
             msg = master.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.5)
             if not msg:
+                print("msg missed in get")
                 continue
-            # print(msg)
             pid = (msg.param_id.decode("ascii", "ignore") if isinstance(msg.param_id, (bytes, bytearray))
                 else str(msg.param_id)).rstrip("\x00")
             if pid == name16:

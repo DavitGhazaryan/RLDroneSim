@@ -1,46 +1,41 @@
+#!/usr/bin/env python3
+
+import sys
+sys.path.insert(0, "/home/pid_rl")
+
+from rl_training.utils.utils import load_config
+from rl_training.utils import GazeboInterface
 import time
-from gz.msgs10.world_control_pb2 import WorldControl
-from gz.msgs10.boolean_pb2 import Boolean
-from gz.msgs10.world_stats_pb2 import WorldStatistics
 
-from gz.transport13 import Node
+def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("instance", nargs="?", type=int, default=1)
+    parser.add_argument("--checkpoint", type=str, default=None,
+                        help="Path to model .zip OR a directory/file inside an existing run to resume.")
+    args = parser.parse_args()
 
-def pause_sim(node, world):
-    svc = f"/world/{world}/control"
-    req = WorldControl()
-    req.pause = True
-    ok, rep = node.request(svc, req, WorldControl, Boolean, timeout=2000)
-    return ok and getattr(rep, "data", False)
+    if args.instance not in (1, 2):
+        print("Error: argument must be 1 or 2.")
+        sys.exit(1)
+    instance = args.instance
+    checkpoint = args.checkpoint
+    print(f"Using value: {instance}")
 
-def resume_sim(node, world):
-    svc = f"/world/{world}/control"
-    req = WorldControl()
-    req.pause = False
-    ok, rep = node.request(svc, req, WorldControl, Boolean, timeout=2000)
-    return ok and getattr(rep, "data", False)
+    print("🚁 ArdupilotEnv + Stable Baselines DDPG Experiment")
+    print("=" * 70)
 
-def _clb(msg):
-    pass
-    # t = int(msg.sim_time.sec) + int(msg.sim_time.nsec) * 1e-9
-    # with self._timer_lock:
-    #     self.sim_time = t
-    # if not self._clock_event.is_set():
-    #     self._clock_event.set()
+    config_path = '/home/pid_rl/rl_training/configs/default_config.yaml'
+
+    config = load_config(config_path)
+    gazebo = GazeboInterface(config['gazebo_config'], instance, True)
+    gazebo.start_simulation()
+    gazebo._wait_for_startup()
+    gazebo.resume_simulation()
+    time.sleep(5)
+    print(gazebo.get_sim_time())
+
+    gazebo.close()
+
 if __name__ == "__main__":
-    world_name = "simple_world"   # change to your world
-    node = Node()
-    node.subscribe(WorldStatistics, f"/world/{world_name}/stats", _clb)
-
-    interval = 0.03           # seconds between pause/resume
-    count = 0
-    while True:
-        print(count)
-        if not pause_sim(node, world_name):
-            print("Pause failed")
-        count += 1
-        time.sleep(interval)
-
-        if not resume_sim(node, world_name):
-            print("Resume failed")
-
-        time.sleep(interval)
+    main() 

@@ -6,6 +6,8 @@
 
 #include <gz/transport/Node.hh>
 #include <gz/msgs/world_stats.pb.h>
+#include <gz/msgs/clock.pb.h>     // <-- correct for /clock
+
 #include <gz/msgs/empty.pb.h>
 #include <gz/msgs/double.pb.h>
 
@@ -20,6 +22,12 @@ void StatsCb(const gz::msgs::WorldStatistics &msg) {
   g_sim_time_sec.store(seconds, std::memory_order_relaxed);
 }
 
+void ClockCb(const gz::msgs::Clock &msg) {
+  const auto &t = msg.sim();                      // sim time in Clock
+  double seconds = static_cast<double>(t.sec()) + t.nsec() * 1e-9;
+  g_sim_time_sec.store(seconds, std::memory_order_relaxed);
+}
+
 bool SimTimeSrv(const gz::msgs::Empty &, gz::msgs::Double &rep) {
   rep.set_data(g_sim_time_sec.load(std::memory_order_relaxed));
   return true;  // success
@@ -27,13 +35,15 @@ bool SimTimeSrv(const gz::msgs::Empty &, gz::msgs::Double &rep) {
 
 int main(int argc, char **argv) {
   std::string world = (argc > 1) ? argv[1] : "simple_world";
-  std::string stats_topic = "/world/" + world + "/stats";
+  // std::string stats_topic = "/world/" + world + "/stats";
+  std::string stats_topic = "/world/" + world + "/clock";
   std::string service_name = "/sim_time";  // change if you want
 
   gz::transport::Node node;
 
   // Subscribe
-  if (!node.Subscribe(stats_topic, &StatsCb)) {
+  // if (!node.Subscribe(stats_topic, &StatsCb)) {
+  if (!node.Subscribe(stats_topic, &ClockCb)) {
     std::cerr << "Failed to subscribe: " << stats_topic << std::endl;
     return 1;
   }

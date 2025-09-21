@@ -153,7 +153,6 @@ class ArdupilotEnv(gym.Env):
 
             hb = master.wait_heartbeat()
             messages = master.messages
-    
             
             for gain in self.action_gains:
                 self.ep_initial_gains[gain] = self.sitl.get_param(master, gain)
@@ -201,14 +200,6 @@ class ArdupilotEnv(gym.Env):
         if seq is None:
             seq = int(time.time() * 1000) & 0x7FFFFFFF  # monotonic-ish
 
-        def tx():
-            master.mav.command_long_send(
-                master.target_system, master.target_component,
-                CMD, 0,          # confirmation=0
-                float(n), float(e), float(agl),
-                float(seq), 0, 0, 0
-            )
-
         def wait_ack():
             t0 = time.time()
             while time.time() - t0 < ack_timeout:
@@ -219,7 +210,12 @@ class ArdupilotEnv(gym.Env):
             return None
 
         for _ in range(retries):
-            tx()
+            master.mav.command_long_send(
+                master.target_system, master.target_component,
+                CMD, 0,          # confirmation=0
+                float(n), float(e), float(agl),
+                float(seq), 0, 0, 0
+            )
             res = wait_ack()
             if res == 0:  # ACCEPTED
                 return True
@@ -317,6 +313,7 @@ class ArdupilotEnv(gym.Env):
         # first get more complete info then construct observation from that        
         master.wait_heartbeat()
         messages = master.messages
+        # print(messages)
         observation, info = self._get_observation(messages)
         terminated, reason = self._check_terminated(messages)
         if terminated:
@@ -424,6 +421,8 @@ class ArdupilotEnv(gym.Env):
             current_time = self.gazebo.get_sim_time()
             if current_time - start_time >= duration:
                 break
+        print(current_time)
+        print(current_time - start_time)
 
     def _check_vicinity_status(self, pos_error_cm, alt_error_cm):
         """
@@ -483,7 +482,6 @@ class ArdupilotEnv(gym.Env):
                 self.max_stable_time = self.eps_stable_time
             self.eps_stable_time = 0
         return False, None 
-
 
     def _compute_reward(self, messages, reason):
         """
