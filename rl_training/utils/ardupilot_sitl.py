@@ -4,13 +4,9 @@ import subprocess
 import time
 import os
 import signal
-import psutil
 import logging
 import atexit
-import threading
-import asyncio
 import socket
-import concurrent.futures
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
@@ -77,7 +73,7 @@ class ArduPilotSITL:
         ))
 
         self._default_params = self._load_default_params()
-        atexit.register(self._cleanup_on_exit)
+        atexit.register(self.close)
         self._validate_paths()
 
     def start_sitl(self):
@@ -91,7 +87,7 @@ class ArduPilotSITL:
         )
         self._wait_for_startup()      # ensures that the process is running and the port(s) are available
         self._get_mavlink_connection()
-        self._set_mode_sync('GUIDED')
+        self.set_mode('GUIDED')
 
     def set_message_interval(self, master, msg_id, hz):
         # master = self._get_mavlink_connection()
@@ -103,19 +99,21 @@ class ArduPilotSITL:
             float(msg_id), float(interval_us), 0, 0, 0, 0, 0)
         master.recv_match(type="COMMAND_ACK", blocking=False, timeout=0.5)      
 
-
-    def set_param_and_confirm(self, master, name_str, value, timeout=3.0):
+    def set_param_and_confirm(self, name_str, value, timeout=3.0):
+        """
+        Sets the parameter and waits for the acknowledgement message.
+        """
         name_bytes = name_str.encode("ascii", "ignore")
         is_float = isinstance(value, float)
         ptype = (mavutil.mavlink.MAV_PARAM_TYPE_REAL32
                 if is_float else mavutil.mavlink.MAV_PARAM_TYPE_INT32)
 
-        master.mav.param_set_send(master.target_system, master.target_component,
+        self._mavlink_master.mav.param_set_send(self._mavlink_master.target_system, self._mavlink_master.target_component,
                                 name_bytes, float(value), ptype)
 
         t0 = time.time()
         while time.time() - t0 < timeout:
-            msg = master.recv_match(type="PARAM_VALUE", blocking=True, timeout=timeout)
+            msg = self._mavlink_master.recv_match(type="PARAM_VALUE", blocking=True, timeout=timeout)
             if not msg:
                 print("msg missed in set")
                 continue
@@ -127,62 +125,10 @@ class ArduPilotSITL:
                 else:
                     print(msg)
                 return True
-    
             else: 
                 print(f"another one was requested here {pid} , {name_str}")
         print("Param is NOT SET")
         return False
-
-    # Mode Setting
-    def _set_mode_sync(self, mode_name: str, timeout: float = 10.0) -> bool:
-        """
-        Synchronous mode setting using pymavlink (for use in thread executor).
-        
-        Args:
-            mode_name: Name of the mode
-            timeout: Timeout in seconds
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            master = self._get_mavlink_connection()
-            mapping = master.mode_mapping()
-
-            if mode_name not in mapping:
-                logger.error(f"Mode '{mode_name}' not found. Available: {list(mapping.keys())}")
-                return False
-
-            mode_id = mapping[mode_name]
-            #logger.debug(f"Setting mode {mode_name} (ID: {mode_id})")
-            
-            # Send the mode change
-            master.mav.set_mode_send(
-                master.target_system,
-                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-                mode_id
-            )
-
-            # Wait for mode change confirmation with non-blocking reads
-            start_time = time.time()
-            while time.time() - start_time < timeout:
-                # if self._shutdown_event.is_set():  # ???
-                #     return False
-                    
-                # Non-blocking read
-                msg = master.recv_match(type='HEARTBEAT', blocking=False, timeout=0.1)
-                if msg and msg.custom_mode == mode_id:
-                    #logger.debug(f"Mode change to {mode_name} confirmed")
-                    return True
-                    
-                time.sleep(0.1)
-            
-            logger.warning(f"Mode change to {mode_name} not confirmed within {timeout}s")
-            return False
-            
-        except Exception as e:
-            logger.error(f"Failed to set mode {mode_name}: {e}")
-            return False
 
     def get_param(self, master, param_name, timeout=3.0, resend_every=0.5):
 
@@ -245,67 +191,57 @@ class ArduPilotSITL:
             
         except Exception as e:
             logger.error(f"Failed to get current mode: {e}")
-            # Connection might be stale, reset it
-            self._close_mavlink_connection()
             return None
 
-    def get_process_info(self) -> Dict[str, Any]:
-        if not self.is_running():
-            return {'status': 'not_running'}
-        p = psutil.Process(self.process.pid)
-        info = {
-            'status':       'running',
-            'pid':          p.pid,
-            'cpu_percent':  p.cpu_percent(),
-            'memory_mb':    p.memory_info().rss / (1024**2),
-            'num_children': len(p.children(recursive=True)),
-            'uptime_s':     time.time() - p.create_time()
-        }
+    def set_mode(self, mode_name: str, timeout: float = 10.0) -> bool:
+        """
+        Synchronous mode setting using pymavlink (for use in thread executor).
         
-        return info
-
-    def stop_sitl(self):
-        if not self.is_running():
-            return
-        #logger.debug("Stopping SITL...")
-        
-        # Close MAVLink connection first
-        self._close_mavlink_connection()
-                
+        Args:
+            mode_name: Name of the mode
+            timeout: Timeout in seconds
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
         try:
-            os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
-            self.process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            logger.warning("Graceful shutdown timed out; forcing kill")
-            os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
-            self.process.wait(timeout=5)
-        except ProcessLookupError:
-            pass
-        # for pid in list(self.child_processes):
-        #     try:
-        #         psutil.Process(pid).terminate()
-        #     except:
-        #         pass
-        
-        # Clean up logging threads gracefully
-        # if hasattr(self, '_shutdown_event'):
-        #     self._shutdown_event.set()  # Signal threads to stop
-        
-        if hasattr(self, 'log_threads') and self.log_threads:
-            for thread in self.log_threads:
-                if thread.is_alive():
-                    try:
-                        thread.join(timeout=2.0)  # Wait up to 2 seconds for thread to finish
-                        if thread.is_alive():
-                            logger.warning(f"Log thread {thread.name} did not terminate gracefully")
-                    except Exception as e:
-                        #logger.debug(f"Error joining log thread: {e}")
-                        pass
-            self.log_threads.clear()
-        
-        self.process = None
-        # self.child_processes.clear()
-        #logger.debug("SITL stopped.")
+            master = self._get_mavlink_connection()
+            mapping = master.mode_mapping()
+
+            if mode_name not in mapping:
+                logger.error(f"Mode '{mode_name}' not found. Available: {list(mapping.keys())}")
+                return False
+
+            mode_id = mapping[mode_name]
+            #logger.debug(f"Setting mode {mode_name} (ID: {mode_id})")
+            
+            # Send the mode change
+            master.mav.set_mode_send(
+                master.target_system,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                mode_id
+            )
+
+            # Wait for mode change confirmation with non-blocking reads
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                # if self._shutdown_event.is_set():  # ???
+                #     return False
+                    
+                # Non-blocking read
+                msg = master.recv_match(type='HEARTBEAT', blocking=False, timeout=0.1)
+                if msg and msg.custom_mode == mode_id:
+                    #logger.debug(f"Mode change to {mode_name} confirmed")
+                    return True
+                    
+                time.sleep(0.1)
+            
+            logger.warning(f"Mode change to {mode_name} not confirmed within {timeout}s")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Failed to set mode {mode_name}: {e}")
+            return False
 
     # utils for the SITL
     def _validate_paths(self):
@@ -386,36 +322,29 @@ class ArduPilotSITL:
         Wait for SITL to initialize by checking both process health and port availability.
         """
         
+        # check process itself
         start = time.time()
-
         while time.time() - start < self.min_startup_delay:
             if self.process.poll() is not None:
                 out, err = self.process.communicate(timeout=1)
                 raise RuntimeError(f"SITL crashed during startup:\n{err.decode()}\n{out.decode()}")
             time.sleep(0.5)
-        if not self._wait_for_ports():
-            if self.process.poll() is not None:
-                out, err = self.process.communicate(timeout=1)
-                raise RuntimeError(f"SITL crashed while waiting for ports:\n{err.decode()}\n{out.decode()}")
-            else:
-                raise TimeoutError(f"Ports are not available after {self.port_check_timeout}s, but SITL process is still running")
         
-    def _wait_for_ports(self) -> bool:
-
-        ports_available = False
+        # Check for ports
         start_time = time.time()
         while time.time() - start_time < self.port_check_timeout:
             if self._check_port_available(port=self.master_port):
                 #logger.debug(f"Master port {self.master_port} is now available")
-                ports_available = True
+                port_available = True
                 break
-            time.sleep(0.5)
-        if not ports_available:
-            logger.error(f"Master port {self.master_port} did not become available within {self.port_check_timeout}s")
-            return False
-
-        return True
-    
+            
+        if not port_available:
+            if self.process.poll() is not None:
+                out, err = self.process.communicate(timeout=1)
+                raise RuntimeError(f"SITL crashed while waiting for ports:\n{err.decode()}\n{out.decode()}")
+            else:
+                raise TimeoutError(f"Master port {self.master_port} did not become available within {self.port_check_timeout}s")
+        
     def _check_port_available(self, host: str = '127.0.0.1',
                             port: Optional[int] = None,
                             timeout: float = 1.0) -> bool:
@@ -437,10 +366,10 @@ class ArduPilotSITL:
         finally:
             sock.close()
 
-
     def _get_mavlink_connection(self):
         """
         Get or create a cached MAVLink connection.
+        Also sets the appropriate parameters on the drone.
         
         Returns:
             mavutil.mavlink_connection: Active connection
@@ -472,7 +401,7 @@ class ArduPilotSITL:
                 self.set_message_interval(self._mavlink_master, ATTITUDE, RATE_HZ)
 
                 GCS_PID_MASK_VALUE = 0xFFFF
-                self.set_param_and_confirm(self._mavlink_master, "GCS_PID_MASK", GCS_PID_MASK_VALUE)
+                self.set_param_and_confirm("GCS_PID_MASK", GCS_PID_MASK_VALUE)
 
                 print(f"Established MAVLink connection to {addr}")
             except Exception as e:
@@ -490,34 +419,20 @@ class ArduPilotSITL:
                 pass
             self._mavlink_master = None
 
-    # Closing and Cleanup
     def close(self):
-        self.stop_sitl()
-        
-        # Shutdown thread executor
-        if hasattr(self, '_thread_executor'):
-            self._thread_executor.shutdown(wait=False)
+        if not self.is_running():
+            return
 
-    def _cleanup_on_exit(self):
-        if self.is_running():
-            #logger.debug("Cleanup on exit: stopping SITL")
-            self.stop_sitl()
-        
-        # Shutdown thread executor
-        if hasattr(self, '_thread_executor'):
-            self._thread_executor.shutdown(wait=False)
-
-    def __enter__(self):
-        self.start_sitl()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
-
-    def __del__(self):
+        self._close_mavlink_connection()
+                
         try:
-            self.stop_sitl()
-            if hasattr(self, '_thread_executor'):
-                self._thread_executor.shutdown(wait=False)
-        except:
+            os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+            self.process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            logger.warning("Graceful shutdown timed out; forcing kill")
+            os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
+            self.process.wait(timeout=5)
+        except ProcessLookupError:
             pass
+                
+        self.process = None

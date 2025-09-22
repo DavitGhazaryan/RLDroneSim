@@ -75,8 +75,7 @@ class ArdupilotEnv(gym.Env):
         # Initialize spaces
         self.observation_space = self._define_observation_space()
         self.action_space = self._define_action_space()
-
-        
+    
     def _define_observation_space(self):
         """
         Observations are flattened into a single Box space for Stable Baselines compatibility.
@@ -142,7 +141,6 @@ class ArdupilotEnv(gym.Env):
             #logger.debug("✅ Gazebo initialized")
             #logger.debug("🚁 Starting ArduPilot SITL...")
             self.sitl.start_sitl()
-            info = self.sitl.get_process_info()
             #logger.debug(f"✅ SITL running (PID {info['pid']})")
             self.initialized = True
 
@@ -176,14 +174,14 @@ class ArdupilotEnv(gym.Env):
             self.mission_function()
         else:
             #logger.info("Resetting the Environment")
-            self.ep_initial_pose, self.ep_initial_attitude, self.ep_initial_gains = self.get_random_initial_state()
+            self.ep_initial_pose, self.ep_initial_attitude, self.ep_initial_gains = self._get_random_initial_state()
             self.eps_stable_time = 0
             self.max_stable_time = 0
 
             logger.info(f"Setting gains to {self.ep_initial_gains}")
             master = self.sitl._get_mavlink_connection()
             for gain in self.action_gains:
-                self.sitl.set_param_and_confirm(master, gain, self.ep_initial_gains[gain])
+                self.sitl.set_param_and_confirm(gain, self.ep_initial_gains[gain])
 
             logger.info(f"Setting drone to {self.ep_initial_pose}")
             
@@ -272,7 +270,7 @@ class ArdupilotEnv(gym.Env):
             case _:
                 raise ValueError(f"Invalid mode: {self.mode}")
 
-    def get_random_initial_state(self):
+    def _get_random_initial_state(self):
         initial_gains = {}
         for gain in self.action_gains:
             # initial_gains[gain] = self.np_random.uniform(0.8, 5.2)
@@ -307,7 +305,7 @@ class ArdupilotEnv(gym.Env):
         for i, var in enumerate(self.action_gains):
             new_gains[var] += action[i]
             new_gains[var] = max(new_gains[var], 0)
-            self.sitl.set_param_and_confirm(master, var, new_gains[var])
+            self.sitl.set_param_and_confirm(var, new_gains[var])
         self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
 
         # first get more complete info then construct observation from that        
@@ -338,39 +336,6 @@ class ArdupilotEnv(gym.Env):
             info[var] = new_gains[var]
 
         return observation, reward, terminated, truncated, info
-
-    def get_observation_key_mapping(self):
-        """Get mapping from observation keys to array indices."""
-        mapping = {}
-        all_keys = self.observable_gains + self.observable_states
-        for i, key in enumerate(all_keys):
-            mapping[key] = i
-        return mapping
-    
-    def get_action_key_mapping(self):
-        """Get mapping from action keys to array indices."""
-        mapping = {}
-        for i, key in enumerate(self.action_gains):
-            mapping[key] = i
-        return mapping
-    
-    def get_observation_description(self):
-        """Get description of what each observation index represents."""
-        description = {}
-        all_keys = self.observable_gains + self.observable_states
-        for i, key in enumerate(all_keys):
-            if i < len(self.observable_gains):
-                description[f"obs_{i}"] = f"Gain: {key}"
-            else:
-                description[f"obs_{i}"] = f"State: {key}"
-        return description
-    
-    def get_action_description(self):
-        """Get description of what each action index represents."""
-        description = {}
-        for i, key in enumerate(self.action_gains):
-            description[f"action_{i}"] = f"Gain adjustment: {key}"
-        return description
 
     def arm_drone(self, master, timeout=10):
         master.wait_heartbeat()
@@ -411,6 +376,39 @@ class ArdupilotEnv(gym.Env):
         else:
             logger.error(f"Failed to takeoff: {ack}")
 
+    def get_observation_key_mapping(self):
+        """Get mapping from observation keys to array indices."""
+        mapping = {}
+        all_keys = self.observable_gains + self.observable_states
+        for i, key in enumerate(all_keys):
+            mapping[key] = i
+        return mapping
+    
+    def get_action_key_mapping(self):
+        """Get mapping from action keys to array indices."""
+        mapping = {}
+        for i, key in enumerate(self.action_gains):
+            mapping[key] = i
+        return mapping
+    
+    def get_observation_description(self):
+        """Get description of what each observation index represents."""
+        description = {}
+        all_keys = self.observable_gains + self.observable_states
+        for i, key in enumerate(all_keys):
+            if i < len(self.observable_gains):
+                description[f"obs_{i}"] = f"Gain: {key}"
+            else:
+                description[f"obs_{i}"] = f"State: {key}"
+        return description
+    
+    def get_action_description(self):
+        """Get description of what each action index represents."""
+        description = {}
+        for i, key in enumerate(self.action_gains):
+            description[f"action_{i}"] = f"Gain adjustment: {key}"
+        return description
+
     def _gazebo_sleep(self, duration):
         """
         Sleep for the given duration (in seconds) using Gazebo simulation time.
@@ -421,8 +419,6 @@ class ArdupilotEnv(gym.Env):
             current_time = self.gazebo.get_sim_time()
             if current_time - start_time >= duration:
                 break
-        print(current_time)
-        print(current_time - start_time)
 
     def _check_vicinity_status(self, pos_error_cm, alt_error_cm):
         """
