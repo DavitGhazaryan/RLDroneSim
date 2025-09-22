@@ -1,4 +1,3 @@
-import enum
 import gymnasium as gym
 from gymnasium.utils import seeding
 from gymnasium import spaces
@@ -8,7 +7,9 @@ import logging
 import sys
 import math
 import time
-from pymavlink import mavutil
+import atexit
+from functools import partial
+
 sys.path.insert(0, "/home/student/Dev/pid_rl")
 
 from rl_training.utils.gazebo_interface import GazeboInterface
@@ -41,9 +42,8 @@ class ArdupilotEnv(gym.Env):
         self.observable_gains = self.config['observable_gains'].split('+')
         self.observable_states = self.config['observable_states'].split('+')
         self.action_gains = self.config['action_gains'].split('+')
-        self.reward_config = self.config["reward_config"]
-        self.reward_coefs = config.get('reward_config').get(self.reward_config)
-
+        self.reward_type = self.config["reward_type"]
+        self.reward_coefs = config.get('reward_config').get(self.reward_type)
         self.action_dt = self.config.get('action_dt')
         self.takeoff_altitude = self.config['takeoff_altitude']
 
@@ -75,6 +75,7 @@ class ArdupilotEnv(gym.Env):
         # Initialize spaces
         self.observation_space = self._define_observation_space()
         self.action_space = self._define_action_space()
+        atexit.register(self.close)
     
     def _define_observation_space(self):
         """
@@ -135,27 +136,23 @@ class ArdupilotEnv(gym.Env):
         self.episode_step = 0
 
         if not self.initialized:
-            #logger.info("🌎 Launching Gazebo simulation...")
             self.gazebo.start_simulation()   # waiting is done internally.
             self.gazebo.resume_simulation()
-            #logger.debug("✅ Gazebo initialized")
-            #logger.debug("🚁 Starting ArduPilot SITL...")
+
             self.sitl.start_sitl()
-            #logger.debug(f"✅ SITL running (PID {info['pid']})")
             self.initialized = True
 
             ## Setup Mission
-            master = self.sitl._get_mavlink_connection()  
-            self.arm_drone(master)
-            time.sleep(10)
+            self.sitl.arm_drone()
+            time.sleep(7)
 
+            master = self.sitl._get_mavlink_connection()  
             hb = master.wait_heartbeat()
             messages = master.messages
             
             for gain in self.action_gains:
-                self.ep_initial_gains[gain] = self.sitl.get_param(master, gain)
-                self.first_initial_gains[gain] = self.sitl.get_param(master, gain)
-                
+                self.ep_initial_gains[gain] = self.sitl.get_param(gain)
+                self.first_initial_gains[gain] = self.sitl.get_param(gain)
 
             self.ep_initial_pose = {
                 'x_m': messages["LOCAL_POSITION_NED"].y,
@@ -178,64 +175,40 @@ class ArdupilotEnv(gym.Env):
             self.eps_stable_time = 0
             self.max_stable_time = 0
 
-            logger.info(f"Setting gains to {self.ep_initial_gains}")
-            master = self.sitl._get_mavlink_connection()
             for gain in self.action_gains:
                 self.sitl.set_param_and_confirm(gain, self.ep_initial_gains[gain])
 
-            logger.info(f"Setting drone to {self.ep_initial_pose}")
+            # print(f"Setting drone to {self.ep_initial_pose}")
             
             self.gazebo.pause_simulation()
             self.gazebo.transport_position(self.sitl.name, [self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]], euler_to_quaternion(None))
             self.gazebo.resume_simulation()
-            self.send_reset(master, self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
+            self.sitl.send_reset(self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
+        
         self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
         observation, info = self._get_observation()
         return observation, info  # observation, info
 
-    def send_reset(self, master, n, e, agl, seq=None, retries=3, ack_timeout=1.5):
-        CMD = 31010
-        if seq is None:
-            seq = int(time.time() * 1000) & 0x7FFFFFFF  # monotonic-ish
 
-        def wait_ack():
-            t0 = time.time()
-            while time.time() - t0 < ack_timeout:
-                msg = master.recv_match(type='COMMAND_ACK', blocking=False)
-                if msg and int(msg.command) == CMD:
-                    return int(msg.result)  # 0 = ACCEPTED
-                time.sleep(0.01)
-            return None
-
-        for _ in range(retries):
-            master.mav.command_long_send(
-                master.target_system, master.target_component,
-                CMD, 0,          # confirmation=0
-                float(n), float(e), float(agl),
-                float(seq), 0, 0, 0
-            )
-            res = wait_ack()
-            if res == 0:  # ACCEPTED
-                return True
-            time.sleep(0.1)
-        return False
     
     def _get_observation(self, messages=None):
 
         # Initialize flattened observation array
         total_dim = len(self.observable_gains) + len(self.observable_states)
         observation = np.zeros(total_dim, dtype=np.float32)
-        
-        master = self.sitl._get_mavlink_connection()
-        master.wait_heartbeat()
+
         
         # Fill gains first
         for i, observable_gain in enumerate(self.observable_gains):
-            gain_value  = self.sitl.get_param(master, observable_gain)
+            gain_value  = self.sitl.get_param(observable_gain)
             observation[i] = gain_value
-        
+                
+
+
         # Fill states
         if messages is None:
+            master = self.sitl._get_mavlink_connection()
+            master.wait_heartbeat()
             messages = master.messages
         
         for i, observable_state in enumerate(self.observable_states):
@@ -263,7 +236,7 @@ class ArdupilotEnv(gym.Env):
                 }
                 self.goal_orientation = self.ep_initial_attitude.copy()
 
-                return self.takeoff_drone
+                return partial(self.sitl.takeoff_drone, self.takeoff_altitude)
             
             case 'position' | 'attitude' | 'stabilize' | 'althold':
                 raise NotImplementedError("Position, attitude, stabilize, and althold modes are not implemented yet")
@@ -295,13 +268,11 @@ class ArdupilotEnv(gym.Env):
 
         if len(action) != len(self.action_gains):
             raise ValueError(f"Expected action of length {len(self.action_gains)}, got {len(action)}")
-        master = self.sitl._get_mavlink_connection()
-        hb = master.wait_heartbeat()
 
         # Get current gains
         new_gains = {}
         for variable in self.action_gains:
-            new_gains[variable] = self.sitl.get_param(master, variable)
+            new_gains[variable] = self.sitl.get_param(variable)
         for i, var in enumerate(self.action_gains):
             new_gains[var] += action[i]
             new_gains[var] = max(new_gains[var], 0)
@@ -309,20 +280,19 @@ class ArdupilotEnv(gym.Env):
         self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
 
         # first get more complete info then construct observation from that        
+        master = self.sitl._get_mavlink_connection()
         master.wait_heartbeat()
-        messages = master.messages
-        # print(messages)
+        messages = master.messages    # same messages are used for single step
+
         observation, info = self._get_observation(messages)
         terminated, reason = self._check_terminated(messages)
         if terminated:
             truncated = False
-            #logger.info(f"Terminating the episode {reason}")
         else:
             terminated = False
             truncated = self.episode_step >= self.max_episode_steps
             if truncated:
                 pass
-                #logger.info(f"Truncating the Episode")
 
         
         # Create proper info dictionary
@@ -336,79 +306,13 @@ class ArdupilotEnv(gym.Env):
             info[var] = new_gains[var]
 
         return observation, reward, terminated, truncated, info
-
-    def arm_drone(self, master, timeout=10):
-        master.wait_heartbeat()
-        t0 = time.time()
-        while time.time() - t0 < timeout:
-            hb = master.recv_match(type="HEARTBEAT", blocking=True, timeout=1.0)
-            if not hb:
-                continue
-            if hb.system_status == mavutil.mavlink.MAV_STATE_STANDBY:
-                break
-            time.sleep(0.1)
-        if time.time() - t0 >= timeout:
-            raise TimeoutError("Failed to arm the drone")
         
-        master.mav.command_long_send(
-            master.target_system, master.target_component,
-                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0
-        )
+    def close(self):
+        """Clean up resources."""
+        self.gazebo.close()
+        self.sitl.close()
 
-        master.recv_match(type='COMMAND_ACK', blocking=True, timeout=10)
-
-    def takeoff_drone(self):
-        master = self.sitl._get_mavlink_connection()
-        master.wait_heartbeat()
-        master.mav.command_long_send(
-            master.target_system,
-            master.target_component,
-            mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-            0,          # confirmation
-            0, 0, 0, 0, # params 1–4 (unused here)
-            0, 0,       # lat, lon (0 = current location)
-            self.takeoff_altitude    # param7 = target altitude (meters, AMSL)
-        )
-        ack = master.recv_match(type='COMMAND_ACK', blocking=True, timeout=10)
-        if ack and ack.result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
-            #logger.info(f"Takeoff to {self.takeoff_altitude} m commanded")
-            pass
-        else:
-            logger.error(f"Failed to takeoff: {ack}")
-
-    def get_observation_key_mapping(self):
-        """Get mapping from observation keys to array indices."""
-        mapping = {}
-        all_keys = self.observable_gains + self.observable_states
-        for i, key in enumerate(all_keys):
-            mapping[key] = i
-        return mapping
-    
-    def get_action_key_mapping(self):
-        """Get mapping from action keys to array indices."""
-        mapping = {}
-        for i, key in enumerate(self.action_gains):
-            mapping[key] = i
-        return mapping
-    
-    def get_observation_description(self):
-        """Get description of what each observation index represents."""
-        description = {}
-        all_keys = self.observable_gains + self.observable_states
-        for i, key in enumerate(all_keys):
-            if i < len(self.observable_gains):
-                description[f"obs_{i}"] = f"Gain: {key}"
-            else:
-                description[f"obs_{i}"] = f"State: {key}"
-        return description
-    
-    def get_action_description(self):
-        """Get description of what each action index represents."""
-        description = {}
-        for i, key in enumerate(self.action_gains):
-            description[f"action_{i}"] = f"Gain adjustment: {key}"
-        return description
-
+    # utils
     def _gazebo_sleep(self, duration):
         """
         Sleep for the given duration (in seconds) using Gazebo simulation time.
@@ -490,7 +394,7 @@ class ArdupilotEnv(gym.Env):
         tol = w.get("tolerance")
 
 
-        if self.reward_config == "hover":
+        if self.reward_type  == "hover":
             ## initialize with 100 step reward
             r = self.reward_coefs.get("step_reward")
             
@@ -546,12 +450,6 @@ class ArdupilotEnv(gym.Env):
             return r
         else:
             raise NotImplementedError()
-        
-    def close(self):
-        """Clean up resources."""
-        #logger.info("Closing environment...")
-        self.gazebo.close()
-        self.sitl.close()
 
 
 if __name__ == "__main__":

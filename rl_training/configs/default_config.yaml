@@ -12,7 +12,7 @@ environment_config:
   observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"  # Which PID gains to observe
   observable_states: "alt_err+vZ_err+accZ_err" # Which states to observe
   action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"      # Which PID gains to adjust
-  reward_config: "hover"       
+  reward_type: "hover"       
   action_dt: 0.05                 # Time interval between action and observation
   takeoff_altitude: 5.0          #  meters
   verbose: false                  # controls custom logging not internal
@@ -130,7 +130,7 @@ ardupilot_config:
   master_port: 5760                            # default udp port
   timeout: 30.0                                # SITL startup timeout
   min_startup_delay: 5.0                       # Minimum startup delay
-  port_check_timeout: 30.0                     # Port availability timeout
+  port_check_timeout: 5.0                     # Port availability timeout
 
 # Gazebo configuration
 # control the wind from the sdf file directly

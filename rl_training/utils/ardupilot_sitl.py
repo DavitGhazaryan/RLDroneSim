@@ -97,7 +97,7 @@ class ArduPilotSITL:
             master.target_system, master.target_component,
             mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
             float(msg_id), float(interval_us), 0, 0, 0, 0, 0)
-        master.recv_match(type="COMMAND_ACK", blocking=False, timeout=0.5)      
+        master.recv_match(type="COMMAND_ACK", blocking=True, timeout=0.5)      
 
     def set_param_and_confirm(self, name_str, value, timeout=3.0):
         """
@@ -130,8 +130,7 @@ class ArduPilotSITL:
         print("Param is NOT SET")
         return False
 
-    def get_param(self, master, param_name, timeout=3.0, resend_every=0.5):
-
+    def get_param(self, param_name, timeout=3.0, resend_every=0.5):
         name16 = param_name[:16]  # enforce MAVLink 16-char limit
         name_bytes = name16.encode("ascii", "ignore")
         t0 = time.time()
@@ -139,9 +138,9 @@ class ArduPilotSITL:
         # print(f"REquested {name16}")
         while time.time() - t0 < timeout:
             if time.time() - last >= resend_every:
-                master.mav.param_request_read_send(master.target_system, master.target_component, name_bytes, -1)
+                self._mavlink_master.mav.param_request_read_send(self._mavlink_master.target_system, self._mavlink_master.target_component, name_bytes, -1)
                 last = time.time()
-            msg = master.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.5)
+            msg = self._mavlink_master.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.5)
             if not msg:
                 print("msg missed in get")
                 continue
@@ -242,6 +241,60 @@ class ArduPilotSITL:
         except Exception as e:
             logger.error(f"Failed to set mode {mode_name}: {e}")
             return False
+
+    def send_reset(self, n, e, agl, seq=None, retries=3, ack_timeout=1.5):
+        CMD = 31010
+        if seq is None:
+            seq = int(time.time() * 1000) & 0x7FFFFFFF  # monotonic-ish
+
+        for _ in range(retries):
+            self._mavlink_master.mav.command_long_send(
+                self._mavlink_master.target_system, self._mavlink_master.target_component,
+                CMD, 0,          # confirmation=0
+                float(n), float(e), float(agl),
+                float(seq), 0, 0, 0
+            )
+            msg = self._mavlink_master.recv_match(type="COMMAND_ACK", blocking=True, timeout=0.5)
+            if msg and int(msg.command) == CMD:
+                return int(msg.result)  # 0 = ACCEPTED
+        return False
+
+    def arm_drone(self, timeout=10):
+        self._mavlink_master.wait_heartbeat()
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            hb = self._mavlink_master.recv_match(type="HEARTBEAT", blocking=True, timeout=1.0)
+            if not hb:
+                continue
+            if hb.system_status == mavutil.mavlink.MAV_STATE_STANDBY:
+                break
+            time.sleep(0.1)
+        if time.time() - t0 >= timeout:
+            raise TimeoutError("Failed to arm the drone")
+        
+        self._mavlink_master.mav.command_long_send(
+            self._mavlink_master.target_system, self._mavlink_master.target_component,
+                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0
+        )
+
+        self._mavlink_master.recv_match(type='COMMAND_ACK', blocking=True, timeout=10)
+
+    def takeoff_drone(self, altitude):
+        self._mavlink_master.wait_heartbeat()
+        self._mavlink_master.mav.command_long_send(
+            self._mavlink_master.target_system,
+            self._mavlink_master.target_component,
+            mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+            0,          # confirmation
+            0, 0, 0, 0, # params 1–4 (unused here)
+            0, 0,       # lat, lon (0 = current location)
+            altitude    # param7 = target altitude (meters, AMSL)
+        )
+        ack = self._mavlink_master.recv_match(type='COMMAND_ACK', blocking=True, timeout=10)
+        if ack and ack.result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
+            pass
+        else:
+            logger.error(f"Failed to takeoff: {ack}")
 
     # utils for the SITL
     def _validate_paths(self):
