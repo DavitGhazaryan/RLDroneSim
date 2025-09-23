@@ -129,6 +129,9 @@ class ArdupilotEnv(gym.Env):
     def reset(self, seed=None, options=None):
         """Reset the environment to initial state."""
         super().reset(seed=seed)             # sets self.np_random
+        print("############################ RESET #############################################")
+        start = time.time()
+
         if hasattr(self.action_space, "seed"):
             self.action_space.seed(seed)
         if hasattr(self.observation_space, "seed"):
@@ -174,19 +177,35 @@ class ArdupilotEnv(gym.Env):
             self.ep_initial_pose, self.ep_initial_attitude, self.ep_initial_gains = self._get_random_initial_state()
             self.eps_stable_time = 0
             self.max_stable_time = 0
-
+            start_setting = time.time()
             for gain in self.action_gains:
                 self.sitl.set_param_and_confirm(gain, self.ep_initial_gains[gain])
-
+            end_setting = time.time()
+            print(f"Param Setting time {end_setting-start_setting}")
             # print(f"Setting drone to {self.ep_initial_pose}")
-            
+            start_pause = time.time()
             self.gazebo.pause_simulation()
+            end_pause = time.time()
+            print(f"pausing service time {end_pause -start_pause}")
+            start_transport = time.time()
             self.gazebo.transport_position(self.sitl.name, [self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]], euler_to_quaternion(None))
+            end_transport = time.time()
+            print(f"transporting service time {end_transport -start_transport}")
+            start_resume = time.time()
             self.gazebo.resume_simulation()
+            end_resume = time.time()
+            print(f"resuming service time {end_resume -start_resume}")
+            
+            star_reset = time.time()
             self.sitl.send_reset(self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
+            end_reset = time.time()
+            print(f"resetting command time {end_reset -star_reset}")
         
         self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
         observation, info = self._get_observation(self.ep_initial_gains)
+        end = time.time()
+
+        print(f" Reset duration {end - start}")
         return observation, info  # observation, info
 
 
@@ -286,8 +305,11 @@ class ArdupilotEnv(gym.Env):
 
         print(f"setting new gains {end_setting-start_setting}")
 
-        
+        start_wait = time.time()
         self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
+        end_wait = time.time()
+
+        print(f"action_dt real {end_wait - start_wait}")
 
         start_msg = time.time()        
         # first get more complete info then construct observation from that        
