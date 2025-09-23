@@ -46,13 +46,14 @@ class GazeboInterface:
         
         
         cmd = ['gz', 'sim']
+        
         if not self._config.get("gui"):
             cmd.append('-s')
         if self._sdf_file:                # use this explicitly as can be modified
             cmd.append(self._sdf_file)
         if self._config.get('verbose'):
             cmd.append('-v 4')
-        
+        cmd.append("--physics-engine=gz-physics-dartsim-plugin")
         try:
             self._process = subprocess.Popen(
                 cmd,

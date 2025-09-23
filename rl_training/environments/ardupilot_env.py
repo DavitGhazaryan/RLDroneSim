@@ -186,12 +186,12 @@ class ArdupilotEnv(gym.Env):
             self.sitl.send_reset(self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
         
         self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
-        observation, info = self._get_observation()
+        observation, info = self._get_observation(self.ep_initial_gains)
         return observation, info  # observation, info
 
 
     
-    def _get_observation(self, messages=None):
+    def _get_observation(self, new_gains, messages=None):
 
         # Initialize flattened observation array
         total_dim = len(self.observable_gains) + len(self.observable_states)
@@ -200,10 +200,7 @@ class ArdupilotEnv(gym.Env):
         
         # Fill gains first
         for i, observable_gain in enumerate(self.observable_gains):
-            gain_value  = self.sitl.get_param(observable_gain)
-            observation[i] = gain_value
-                
-
+            observation[i] = new_gains[observable_gain]
 
         # Fill states
         if messages is None:
@@ -257,7 +254,11 @@ class ArdupilotEnv(gym.Env):
     
     def step(self, action):
         self.episode_step += 1
+        print()
+        start = time.time()
         obs, reward, done, truncated, info = self._step(action)
+        end = time.time()
+        print(f"Step duration {end-start}")
         return obs, reward, done, truncated, info
 
     def _step(self, action):
@@ -268,23 +269,41 @@ class ArdupilotEnv(gym.Env):
 
         if len(action) != len(self.action_gains):
             raise ValueError(f"Expected action of length {len(self.action_gains)}, got {len(action)}")
-
+        start_getting = time.time()
         # Get current gains
         new_gains = {}
         for variable in self.action_gains:
             new_gains[variable] = self.sitl.get_param(variable)
+        end_getting = time.time()
+        print(f"getting curr gains {end_getting-start_getting}")
+        
+        start_setting = time.time()
         for i, var in enumerate(self.action_gains):
             new_gains[var] += action[i]
             new_gains[var] = max(new_gains[var], 0)
             self.sitl.set_param_and_confirm(var, new_gains[var])
+        end_setting = time.time()
+
+        print(f"setting new gains {end_setting-start_setting}")
+
+        
         self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
 
+        start_msg = time.time()        
         # first get more complete info then construct observation from that        
         master = self.sitl._get_mavlink_connection()
         master.wait_heartbeat()
         messages = master.messages    # same messages are used for single step
+        end_msg = time.time()
 
-        observation, info = self._get_observation(messages)
+        print(f"message reading {end_msg-start_msg}")
+
+        start_obs = time.time()
+        observation, info = self._get_observation(new_gains, messages)
+        end_obs = time.time()
+        print(f"get observation {end_obs-start_obs}")
+
+        start_boil = time.time()
         terminated, reason = self._check_terminated(messages)
         if terminated:
             truncated = False
@@ -304,7 +323,8 @@ class ArdupilotEnv(gym.Env):
         reward = self._compute_reward(messages, reason)
         for i, var in enumerate(self.action_gains):
             info[var] = new_gains[var]
-
+        end_boil = time.time()
+        print(f"boilerplate code {end_boil -start_boil}")
         return observation, reward, terminated, truncated, info
         
     def close(self):
