@@ -147,7 +147,7 @@ class ArdupilotEnv(gym.Env):
 
             ## Setup Mission
             self.sitl.arm_drone()
-            time.sleep(7)
+            time.sleep(5)
 
             master = self.sitl._get_mavlink_connection()  
             hb = master.wait_heartbeat()
@@ -208,8 +208,6 @@ class ArdupilotEnv(gym.Env):
         print(f" Reset duration {end - start}")
         return observation, info  # observation, info
 
-
-    
     def _get_observation(self, new_gains, messages=None):
 
         # Initialize flattened observation array
@@ -340,9 +338,9 @@ class ArdupilotEnv(gym.Env):
         info = {
             'reason': reason,
             'episode_step': self.episode_step,
-            'max_stable_time': self.max_stable_time,
         }
         reward = self._compute_reward(messages, reason)
+        print(reward)
         for i, var in enumerate(self.action_gains):
             info[var] = new_gains[var]
         end_boil = time.time()

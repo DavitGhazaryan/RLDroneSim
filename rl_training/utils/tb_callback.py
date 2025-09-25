@@ -41,7 +41,6 @@ class TensorboardCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         infos = self.locals.get("infos", [])
-
         # # Merge infos from all parallel envs, last one wins
         merged: Dict[str, Any] = {}
         for d in infos or []:
@@ -49,7 +48,7 @@ class TensorboardCallback(BaseCallback):
                 merged.update(d)
 
         # make sure that they are in info dict as well. !!
-        env_keys = ["pos_error", "alt_error", "max_stable_time"]
+        env_keys = ["max_stable_time"]
         for k in env_keys:
             if k in merged:
                 self.logger.record(f"env/{k}", merged[k])

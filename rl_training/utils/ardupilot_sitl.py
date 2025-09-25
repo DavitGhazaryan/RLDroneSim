@@ -82,7 +82,7 @@ class ArduPilotSITL:
         cmd = self._build_command()
 
         self.process = subprocess.Popen(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=False,
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=False,
             cwd=str(self.ardupilot_path),
         )
         self._wait_for_startup()      # ensures that the process is running and the port(s) are available
@@ -294,7 +294,7 @@ class ArduPilotSITL:
         if ack and ack.result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
             pass
         else:
-            logger.error(f"Failed to takeoff: {ack}")
+            raise Exception(f"Failed to take off: {ack}")
 
     # utils for the SITL
     def _validate_paths(self):

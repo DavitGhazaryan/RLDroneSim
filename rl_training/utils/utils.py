@@ -140,13 +140,13 @@ def evaluate_agent(model, env, num_episodes):
     print(f"   Average episode length: {avg_length:.1f} steps")
     print(f"   Success rate: {sum(1 for r in episode_rewards if r > 0) / len(episode_rewards):.1%}")
     
-    return {
-        'episode_rewards': episode_rewards,
-        'episode_lengths': episode_lengths,
-        'avg_reward': avg_reward,
-        'std_reward': std_reward,
-        'avg_length': avg_length
-    }
+    # return {
+    #     'episode_rewards': episode_rewards,
+    #     'episode_lengths': episode_lengths,
+    #     'avg_reward': avg_reward,
+    #     'std_reward': std_reward,
+    #     'avg_length': avg_length
+    # }
 
 # --------------------
 # Run directory helpers
