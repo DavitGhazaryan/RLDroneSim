@@ -55,6 +55,14 @@ class GazeboInterface:
             cmd.append('-v 4')
         cmd.append("--physics-engine=gz-physics-dartsim-plugin")
         try:
+            # self._process = subprocess.Popen(
+            #     cmd,
+            #     stdout=subprocess.DEVNULL,
+            #     stderr=subprocess.PIPE,
+            #     start_new_session=False,
+            #     preexec_fn=os.sched_setaffinity(0, set(range(15)))
+            #     )
+
             self._process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,

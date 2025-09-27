@@ -1,0 +1,79 @@
+environment_config:
+  max_episode_steps: 100
+  mode: altitude
+  observable_gains: PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D
+  observable_states: alt_err+vZ_err+accZ_err
+  action_gains: PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D
+  reward_type: hover
+  action_dt: 0.05
+  takeoff_altitude: 5.0
+  verbose: false
+ardupilot_config:
+  ardupilot_path: /home/pid_rl/ardupilot
+  frame: gazebo-iris
+  name: iris_with_ardupilot
+  ideal_sensors: true
+  count: null
+  location: null
+  speedup: 15
+  wipe_eeprom: true
+  use_dir: null
+  delay_start: null
+  model: JSON
+  clean: true
+  no_rebuild: true
+  no_configure: true
+  no_mavproxy: true
+  udp: true
+  map: false
+  console: false
+  master_port: 5760
+  timeout: 30.0
+  min_startup_delay: 5.0
+  port_check_timeout: 5.0
+gazebo_config:
+  sdf_file: /home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf
+  gui: false
+  verbose: false
+ddpg_params:
+  learning_rate: 0.001
+  buffer_size: 100000
+  learning_starts: 5000
+  batch_size: 1024
+  tau: 0.005
+  gamma: 0.99
+  train_freq: 1
+  gradient_steps: 3
+  action_noise:
+    type: NormalActionNoise
+    mean: 0.0
+    sigma: 0.1
+  verbose: 1
+  policy_kwargs:
+    net_arch:
+      pi:
+      - 256
+      - 256
+      qf:
+      - 256
+      - 256
+  device: cuda
+  _init_setup_model: true
+training_config:
+  total_timesteps: 1000000
+  runs_base: /home/pid_rl/rl_training/runs
+  algo: ddpg
+  mission: hover
+  model_name_prefix: ddpg_ardupilot
+  progress_bar: true
+  reset_num_timesteps: false
+evaluation_config:
+  n_eval_episodes: 20
+  deterministic: true
+  save_results: true
+  plot_results: false
+callbacks:
+- type: checkpoint
+  save_freq: 500
+  name_prefix: ddpg_ardupilot
+- type: tensorboard
