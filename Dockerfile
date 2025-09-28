@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-dev \
+    python3-protobuf \
     pkg-config \
     software-properties-common \
     ca-certificates \
@@ -118,14 +119,23 @@ ENV LD_LIBRARY_PATH=/usr/lib/wsl/lib:${LD_LIBRARY_PATH}
 
 # Install Python packages
 RUN pip3 install --upgrade pip && \
-    pip3 install numpy matplotlib==3.10.0 scipy pandas mavsdk gymnasium mavproxy==1.8.71 protobuf==5.29.0 
+    pip3 install numpy matplotlib==3.10.0 scipy pandas gymnasium mavproxy==1.8.71 protobuf==5.29.0 
 
 RUN python -m pip install --upgrade --ignore-installed sympy
 
 RUN pip install stable-baselines3[extra] && \
     pip uninstall -y opencv-python && pip install -U opencv-python-headless
 
-# Build ArduPilot SITL targets (copter, plane, rover)
+
+    # Clock Node 
+# WORKDIR /home/pid_rl/clock_node
+# COPY clock_node/ /home/pid_rl/clock_node/
+
+# RUN --mount=type=cache,target=/root/.cache \
+#     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && \
+#     cmake --build build -j"$(nproc)"
+
+# Build ArduPilot SITL targets (copter)
 WORKDIR /home/pid_rl/ardupilot
 RUN  git config --global --add safe.directory /home/pid_rl/ardupilot
 RUN ./waf configure --board sitl && \
