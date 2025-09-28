@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
 """
-Example script showing how to use the modified ArdupilotEnv directly with Stable Baselines DDPG.
-The environment now returns flattened observations and actions, making it directly compatible.
+Evaluate the Default PID gains as baseline, using the same reward function and pipeline as the other agents.
 """
+
+raise NotImplementedError("Old Version !!!. refactor")
 
 import sys
 sys.path.insert(0, "/home/pid_rl")

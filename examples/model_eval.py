@@ -5,6 +5,8 @@ Example script showing how to use the modified ArdupilotEnv directly with Stable
 The environment now returns flattened observations and actions, making it directly compatible.
 """
 
+raise NotImplementedError("Old Version !!!. refactor")
+
 import sys
 sys.path.insert(0, "/home/pid_rl")
 

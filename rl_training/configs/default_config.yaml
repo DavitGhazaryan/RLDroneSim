@@ -12,12 +12,9 @@ environment_config:
   observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"  # Which PID gains to observe
   observable_states: "alt_err+vZ_err+accZ_err" # Which states to observe
   action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"      # Which PID gains to adjust
-  reward_type: "hover"       
   action_dt: 0.05                 # Time interval between action and observation
   takeoff_altitude: 5.0          #  meters
   verbose: false                  # controls custom logging not internal
-  # normalize_observations: true   # Whether to normalize observations
-  # normalize_actions: false       # Whether to normalize actions
 
 training_config:
   total_timesteps: 1000000                        # Total training timesteps
@@ -27,7 +24,6 @@ training_config:
   model_name_prefix: "ddpg_ardupilot"          # Model name prefix
   progress_bar: true                           # Show training progress bar
   reset_num_timesteps: false                    # Reset timestep counter
-
 
 # DDPG algorithm parameters
 # Core hyperparameters for the DDPG algorithm
@@ -44,14 +40,11 @@ ddpg_params:
     type: "NormalActionNoise"                   # Noise type: NormalActionNoise
     mean: 0.0                                   # Mean of noise distribution
     sigma: 0.1                                  # Standard deviation of noise
-  # target_policy_noise: 0.2                    # Target policy noise (for TD3-like behavior)
-  # target_noise_clip: 0.5                      # Target noise clipping
   verbose: 1                                    # Verbosity level
   policy_kwargs:
     net_arch: 
       pi: [256, 256]  # 2 hidden layers, each with 256 units (for both actor and critic)
       qf: [256, 256]  # 2 hidden layers, each with 256 units (for both actor and critic)
-    # activation_fn: torch.nn.ReLU  # Activation function for both actor and critic networks
   device: "cuda"                               # Device for training (auto, cpu, cuda)
   _init_setup_model: true                      # for ddpg 
 
@@ -63,21 +56,12 @@ callbacks:
     save_freq: 500                             # Save frequency for checkpoints
     name_prefix: "ddpg_ardupilot"              # Checkpoint name prefix
   - type: "tensorboard"                         # Checkpoint callback type
-    # save_freq: 500                             # Save frequency for checkpoints
-    # name_prefix: "ddpg_ardupilot"              # Checkpoint name prefix
-
-# Evaluation configuration
-evaluation_config:
-  n_eval_episodes: 20                           # Number of evaluation episodes
-  deterministic: true                           # Use deterministic actions
-  save_results: true                            # Save evaluation results
-  plot_results: false                            # Plot evaluation results
 
 # Reward function configuration
 # Parameters for different reward function types
 # Comment out sections you don't want to use or set weights to 0
 reward_config:
-  hover:                                       # Hover reward function
+  altitude:                        # Mode
     alt_w: 1                       # Weight for altitude error
     xy_w: 1                        # Weight for XY position error
     velN_w: 1                      # Weight for North velocity err
@@ -106,9 +90,12 @@ reward_config:
       acc_d_tol: 8.8        #  ? 
 
 
+drone_config:
+  ip: "udp:127.0.0.1"
+  master_port: 5760                            # default udp port
+  port_check_timeout: 5.0                     # Port availability timeout
 
-
-ardupilot_config:
+sitl_config:
   ardupilot_path: "/home/pid_rl/ardupilot"     # Path to ArduPilot directory
   frame: "gazebo-iris"                         # Vehicle model for Gazebo
   name: "iris_with_ardupilot"                  # Vehicle name
@@ -127,6 +114,7 @@ ardupilot_config:
   udp: true                                    # Use UDP communication
   map: false                                   # Show map interface
   console: false                               # Show console interface
+  ip: "udp:127.0.0.1"
   master_port: 5760                            # default udp port
   timeout: 30.0                                # SITL startup timeout
   min_startup_delay: 5.0                       # Minimum startup delay

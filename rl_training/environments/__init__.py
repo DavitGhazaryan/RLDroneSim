@@ -2,10 +2,8 @@
 Environment implementations for Ardupilot RL training.
 """
 
-from .ardupilot_env import ArdupilotEnv
-from .hard_env import HardEnv
+from .base_env import BaseEnv
 
 __all__ = [
-    "ArdupilotEnv"
-    "HardEnv"
+    "BaseEnv"
 ] 

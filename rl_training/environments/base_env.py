@@ -12,50 +12,41 @@ from functools import partial
 
 sys.path.insert(0, "/home/student/Dev/pid_rl")
 
-from rl_training.utils.gazebo_interface import GazeboInterface
+from rl_training.utils.drone import Drone
 from rl_training.utils.ardupilot_sitl import ArduPilotSITL
 from rl_training.utils.utils import euler_to_quaternion, nrm
 logger = logging.getLogger("Env")
 from enum import Enum, auto
 
-class Termination(Enum):
+class Termination(Enum):    
     ATTITUDE_ERR = auto()   # excessive attitude error
     VEL_EXC = auto()        # velocity exceeded
     FLIP = auto()           # flip detected
     FAR = auto()            # too far from target
 
-class ArdupilotEnv(gym.Env):
+class BaseEnv(gym.Env):
     """
-    Initializes Gazebo and Ardupilot SITL, and provides a Gymnasium-compatible interface.
-    Environment is intended to enable training if an RL agent that will find the optimal PID gains to put on an agent.  
+    Defines the main API of the Environment. main component is the drone which can be either hardware or Gazebo+SITL.
     """
     
-    def __init__(self, config, eval=False, instance=1):
+    def __init__(self, config, hardware=False, instance=1):
         super().__init__()
         self.np_random, _ = seeding.np_random(None)  # init
 
-        self.eval = eval
-
+        self.hardware = hardware
+        
         self.config = config.get('environment_config', {})
         self.max_episode_steps = self.config.get('max_episode_steps')
         self.mode = self.config.get('mode')
         self.observable_gains = self.config['observable_gains'].split('+')
         self.observable_states = self.config['observable_states'].split('+')
         self.action_gains = self.config['action_gains'].split('+')
-        self.reward_type = self.config["reward_type"]
-        self.reward_coefs = config.get('reward_config').get(self.reward_type)
+        self.reward_coefs = config.get('reward_config').get(self.mode)
         self.action_dt = self.config.get('action_dt')
         self.takeoff_altitude = self.config['takeoff_altitude']
+        self.verbose = self.config['verbose']  # internal logging  TODO
 
-        self.verbose = self.config.get("verbose")
-
-        if self.verbose:
-            logger.setLevel(logging.INFO)
-        else:
-            logger.setLevel(logging.ERROR)
-
-        self.gazebo = GazeboInterface(config['gazebo_config'], instance, self.verbose)
-        self.sitl = ArduPilotSITL(config['ardupilot_config'], instance, self.verbose)
+        self.drone = Drone(config['drone_config'], self.verbose) if self.hardware else ArduPilotSITL(config['sitl_config'], config['gazebo_config'], instance, self.verbose)
 
         # Episode tracking
         self.initialized = False
@@ -75,6 +66,7 @@ class ArdupilotEnv(gym.Env):
         # Initialize spaces
         self.observation_space = self._define_observation_space()
         self.action_space = self._define_action_space()
+
         atexit.register(self.close)
     
     def _define_observation_space(self):
@@ -82,9 +74,6 @@ class ArdupilotEnv(gym.Env):
         Observations are flattened into a single Box space for Stable Baselines compatibility.
         Order: [observable_gains, observable_states]
         """
-        # Calculate total dimension
-        total_dim = len(self.observable_gains) + len(self.observable_states)
-        
         # Create bounds arrays
         lows = []
         highs = []
@@ -112,13 +101,8 @@ class ArdupilotEnv(gym.Env):
         """
         # Calculate total dimension
         total_dim = len(self.action_gains)
-        if self.eval:  # for eval only 0 actions
-            lows = np.array([0.0] * total_dim, dtype=np.float32)
-            highs = np.array([0.0] * total_dim, dtype=np.float32)
-        else:
-            # Create bounds arrays (all actions are -0.1 to 0.1)
-            lows = np.array([-5.0] * total_dim, dtype=np.float32)
-            highs = np.array([5.0] * total_dim, dtype=np.float32)
+        lows = np.array([-5.0] * total_dim, dtype=np.float32)
+        highs = np.array([5.0] * total_dim, dtype=np.float32)
         
         return spaces.Box(
             low=lows,
@@ -139,23 +123,15 @@ class ArdupilotEnv(gym.Env):
         self.episode_step = 0
 
         if not self.initialized:
-            self.gazebo.start_simulation()   # waiting is done internally.
-            self.gazebo.resume_simulation()
+            self.drone.start()
 
-            self.sitl.start_sitl()
-            self.initialized = True
-
-            ## Setup Mission
-            self.sitl.arm_drone()
-            time.sleep(5)
-
-            master = self.sitl._get_mavlink_connection()  
+            master = self.drone._get_mavlink_connection()  
             hb = master.wait_heartbeat()
             messages = master.messages
             
             for gain in self.action_gains:
-                self.ep_initial_gains[gain] = self.sitl.get_param(gain)
-                self.first_initial_gains[gain] = self.sitl.get_param(gain)
+                self.ep_initial_gains[gain] = self.drone.get_param(gain)
+                self.first_initial_gains[gain] = self.drone.get_param(gain)
 
             self.ep_initial_pose = {
                 'x_m': messages["LOCAL_POSITION_NED"].y,
@@ -169,45 +145,42 @@ class ArdupilotEnv(gym.Env):
                 'roll_deg': math.degrees(attitude.roll),
                 'yaw_deg': math.degrees(attitude.yaw)
             }
+            self.initialized = True
+            
+            if not self.hardware:
+                self.mission_function = self._setup_mission()   # same x, y, z
+                self.mission_function()
 
-            self.mission_function = self._setup_mission()   # same x, y, z
-            self.mission_function()
         else:
-            #logger.info("Resetting the Environment")
-            self.ep_initial_pose, self.ep_initial_attitude, self.ep_initial_gains = self._get_random_initial_state()
             self.eps_stable_time = 0
             self.max_stable_time = 0
-            start_setting = time.time()
-            for gain in self.action_gains:
-                self.sitl.set_param_and_confirm(gain, self.ep_initial_gains[gain])
-            end_setting = time.time()
-            print(f"Param Setting time {end_setting-start_setting}")
-            # print(f"Setting drone to {self.ep_initial_pose}")
-            start_pause = time.time()
-            self.gazebo.pause_simulation()
-            end_pause = time.time()
-            print(f"pausing service time {end_pause -start_pause}")
-            start_transport = time.time()
-            self.gazebo.transport_position(self.sitl.name, [self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]], euler_to_quaternion(None))
-            end_transport = time.time()
-            print(f"transporting service time {end_transport -start_transport}")
-            start_resume = time.time()
-            self.gazebo.resume_simulation()
-            end_resume = time.time()
-            print(f"resuming service time {end_resume -start_resume}")
+
+            if not self.hardware:
+                # works only for simulation
+                self.ep_initial_pose, self.ep_initial_attitude, self.ep_initial_gains = self._get_random_initial_state()
+                start_setting = time.time()
+                for gain in self.action_gains:
+                    self.drone.set_param_and_confirm(gain, self.ep_initial_gains[gain])
+                end_setting = time.time()
+                print(f"Param Setting time {end_setting-start_setting}")
+                self.drone.reset([self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]], euler_to_quaternion(None))            
             
-            star_reset = time.time()
-            self.sitl.send_reset(self.ep_initial_pose["y_m"], self.ep_initial_pose["x_m"], self.ep_initial_pose["z_m"])
-            end_reset = time.time()
-            print(f"resetting command time {end_reset -star_reset}")
-        
-        self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
+        self.drone.wait(self.action_dt)   # no need to normalize the sleep time with speedup
         observation, info = self._get_observation(self.ep_initial_gains)
         end = time.time()
 
         print(f" Reset duration {end - start}")
         return observation, info  # observation, info
-
+    
+    def step(self, action):
+        self.episode_step += 1
+        print()
+        start = time.time()
+        obs, reward, done, truncated, info = self._step(action)
+        end = time.time()
+        print(f"Step duration {end-start}")
+        return obs, reward, done, truncated, info
+    
     def _get_observation(self, new_gains, messages=None):
 
         # Initialize flattened observation array
@@ -221,7 +194,7 @@ class ArdupilotEnv(gym.Env):
 
         # Fill states
         if messages is None:
-            master = self.sitl._get_mavlink_connection()
+            master = self.drone._get_mavlink_connection()
             master.wait_heartbeat()
             messages = master.messages
         
@@ -240,7 +213,10 @@ class ArdupilotEnv(gym.Env):
         info = {}
         return observation, info 
 
+    # for simulation related code
     def _setup_mission(self):
+        if self.hardware:
+            raise NotImplementedError("Mission is for sitl.")
         match self.mode:
             case 'altitude':
                 self.goal_pose = {
@@ -250,7 +226,7 @@ class ArdupilotEnv(gym.Env):
                 }
                 self.goal_orientation = self.ep_initial_attitude.copy()
 
-                return partial(self.sitl.takeoff_drone, self.takeoff_altitude)
+                return partial(self.drone.takeoff_drone, self.takeoff_altitude)
             
             case 'position' | 'attitude' | 'stabilize' | 'althold':
                 raise NotImplementedError("Position, attitude, stabilize, and althold modes are not implemented yet")
@@ -260,24 +236,13 @@ class ArdupilotEnv(gym.Env):
     def _get_random_initial_state(self):
         initial_gains = {}
         for gain in self.action_gains:
-            # initial_gains[gain] = self.np_random.uniform(0.8, 5.2)
-            # initial_gains[gain] = max(self.ep_initial_gains[gain] + self.np_random.uniform(-3.0, 3.0), 0) if not self.eval else self.ep_initial_gains[gain]
-            initial_gains[gain] = max(self.first_initial_gains[gain] + self.np_random.uniform(-2.0, 2.0), 0) if not self.eval else self.ep_initial_gains[gain]
+            initial_gains[gain] = max(self.first_initial_gains[gain] + self.np_random.uniform(-2.0, 2.0), 0)
         return {
             'x_m': self.goal_pose['x_m'],
             'y_m': self.goal_pose['y_m'],    
             'z_m': max(self.goal_pose['z_m']+ self.np_random.uniform(-2.0, 2.0), 0.3) 
         }, self.ep_initial_attitude, initial_gains
     
-    def step(self, action):
-        self.episode_step += 1
-        print()
-        start = time.time()
-        obs, reward, done, truncated, info = self._step(action)
-        end = time.time()
-        print(f"Step duration {end-start}")
-        return obs, reward, done, truncated, info
-
     def _step(self, action):
         """
         Handle flattened actions for Stable Baselines compatibility.
@@ -290,7 +255,7 @@ class ArdupilotEnv(gym.Env):
         # Get current gains
         new_gains = {}
         for variable in self.action_gains:
-            new_gains[variable] = self.sitl.get_param(variable)
+            new_gains[variable] = self.drone.get_param(variable)
         end_getting = time.time()
         print(f"getting curr gains {end_getting-start_getting}")
         
@@ -298,20 +263,20 @@ class ArdupilotEnv(gym.Env):
         for i, var in enumerate(self.action_gains):
             new_gains[var] += action[i]
             new_gains[var] = max(new_gains[var], 0)
-            self.sitl.set_param_and_confirm(var, new_gains[var])
+            self.drone.set_param_and_confirm(var, new_gains[var])
         end_setting = time.time()
 
         print(f"setting new gains {end_setting-start_setting}")
 
         start_wait = time.time()
-        self._gazebo_sleep(self.action_dt)   # no need to normalize the sleep time with speedup
+        self.drone.wait(self.action_dt)   # no need to normalize the sleep time with speedup
         end_wait = time.time()
 
         print(f"action_dt real {end_wait - start_wait}")
 
         start_msg = time.time()        
         # first get more complete info then construct observation from that        
-        master = self.sitl._get_mavlink_connection()
+        master = self.drone._get_mavlink_connection()
         master.wait_heartbeat()
         messages = master.messages    # same messages are used for single step
         end_msg = time.time()
@@ -349,20 +314,7 @@ class ArdupilotEnv(gym.Env):
         
     def close(self):
         """Clean up resources."""
-        self.gazebo.close()
-        self.sitl.close()
-
-    # utils
-    def _gazebo_sleep(self, duration):
-        """
-        Sleep for the given duration (in seconds) using Gazebo simulation time.
-        """
-        start_time = self.gazebo.get_sim_time()
-        while True:
-            time.sleep(0.001)
-            current_time = self.gazebo.get_sim_time()
-            if current_time - start_time >= duration:
-                break
+        self.drone.close()
 
     def _check_vicinity_status(self, pos_error_cm, alt_error_cm):
         """
@@ -434,7 +386,7 @@ class ArdupilotEnv(gym.Env):
         tol = w.get("tolerance")
 
 
-        if self.reward_type  == "hover":
+        if self.mode  == "altitude":
             ## initialize with 100 step reward
             r = self.reward_coefs.get("step_reward")
             
@@ -497,7 +449,7 @@ if __name__ == "__main__":
     from rl_training.utils.utils import load_config
     config = load_config('/home/pid_rl/rl_training/configs/default_config.yaml')
 
-    env = ArdupilotEnv(config)
+    env = BaseEnv(config)
     # check_env(env)
     # env_reset_passive_checker(env)
     # env_step_passive_checker(env, env.action_space.sample())

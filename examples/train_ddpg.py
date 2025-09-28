@@ -3,7 +3,7 @@
 import sys
 sys.path.insert(0, "/home/pid_rl")
 
-from rl_training.environments import ArdupilotEnv
+from rl_training.environments import BaseEnv
 from rl_training.utils.utils import load_config, evaluate_agent
 from stable_baselines3 import DDPG
 from stable_baselines3.common.callbacks import CheckpointCallback
@@ -11,8 +11,7 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.logger import configure
 from rl_training.utils.tb_callback import TensorboardCallback
 import numpy as np
-from rl_training.utils.utils import create_run_dir, save_config_copy, save_git_info, save_metrics_json
-import subprocess
+from rl_training.utils.utils import create_run_dir, save_config_copy, save_git_info
 import os, re
 
 def create_action_noise_from_config(action_noise_config, action_dim):
@@ -191,7 +190,7 @@ def main():
 
     try:
         config = load_config(config_path)
-        env = ArdupilotEnv(config, instance=instance)
+        env = BaseEnv(config, hardware=False, instance=instance)
 
         # Prepare (or reuse) run directory structure
         training_config = config.get('training_config', {})
