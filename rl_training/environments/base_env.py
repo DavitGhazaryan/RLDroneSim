@@ -172,14 +172,6 @@ class BaseEnv(gym.Env):
         print(f" Reset duration {end - start}")
         return observation, info  # observation, info
     
-    def step(self, action):
-        self.episode_step += 1
-        print()
-        start = time.time()
-        obs, reward, done, truncated, info = self._step(action)
-        end = time.time()
-        print(f"Step duration {end-start}")
-        return obs, reward, done, truncated, info
     
     def _get_observation(self, new_gains, messages=None):
 
@@ -243,11 +235,12 @@ class BaseEnv(gym.Env):
             'z_m': max(self.goal_pose['z_m']+ self.np_random.uniform(-2.0, 2.0), 0.3) 
         }, self.ep_initial_attitude, initial_gains
     
-    def _step(self, action):
+    def step(self, action):
         """
         Handle flattened actions for Stable Baselines compatibility.
         Actions are changes to PID parameters that need to be applied.
         """
+        self.episode_step += 1
 
         if len(action) != len(self.action_gains):
             raise ValueError(f"Expected action of length {len(self.action_gains)}, got {len(action)}")

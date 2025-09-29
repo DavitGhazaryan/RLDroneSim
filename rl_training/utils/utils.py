@@ -115,6 +115,8 @@ def evaluate_agent(model, env, num_episodes):
                 action, _ = model.predict(obs, deterministic=True)  
             else:
                 action = env.action_space.sample()  
+                action = action * 0
+
             # Take step in environment
             obs, reward, terminated, truncated, info = env.step(action)
             
@@ -148,9 +150,7 @@ def evaluate_agent(model, env, num_episodes):
     #     'avg_length': avg_length
     # }
 
-# --------------------
-# Run directory helpers
-# --------------------
+
 import datetime
 import json
 import subprocess
@@ -269,7 +269,7 @@ def save_config_copy(config: dict, cfg_path: str) -> None:
     """Save a trimmed copy of the config to cfg.yaml in the run dir."""
     try:
         # Preserve only essential top-level keys if present
-        trimmed = {k: config.get(k) for k in essential_config_keys if k in config}
+        trimmed = {k: config.get(k) for k in config}
         with open(cfg_path, 'w') as f:
             yaml.safe_dump(trimmed if trimmed else config, f, sort_keys=False)
     except Exception as exc:
@@ -310,6 +310,52 @@ def huber(e, delta):
 
 def nrm(e, tau):
     return min(abs(e)/tau, 10.0)
+
+
+def create_action_noise_from_config(action_noise_config, action_dim):
+    noise_type = action_noise_config.get('type', 'NormalActionNoise')
+    
+    if noise_type == 'NormalActionNoise':
+        from stable_baselines3.common.noise import NormalActionNoise
+        mean = action_noise_config.get('mean')
+        sigma = action_noise_config.get('sigma')
+        
+        return NormalActionNoise(
+            mean=mean * np.ones(action_dim),
+            sigma=sigma * np.ones(action_dim)
+        )
+    else:
+        from stable_baselines3.common.noise import NormalActionNoise
+        return NormalActionNoise(
+            mean=np.zeros(action_dim),
+            sigma=0.1 * np.ones(action_dim)
+        )
+
+def _latest_ckpt_path(path_like: str, name_prefix: str):
+    """
+    Accepts a directory or a specific .zip path.
+    Returns (model_zip_path, steps_int) or (None, None) if not found.
+    """
+    print(path_like, name_prefix)
+    if path_like is None:
+        return None, None
+    if os.path.isfile(path_like) and path_like.endswith(".zip"):
+        m = re.search(r"_(\d+)_steps\.zip$", os.path.basename(path_like))
+        steps = int(m.group(1)) if m else None
+        return path_like, steps
+    return None, None
+
+def _replay_for(model_zip_path: str, steps: int, name_prefix: str):
+    """
+    Finds the replay buffer file that matches the given model steps.
+    Expects: <dir>/<name_prefix>_replay_buffer_<steps>_steps.pkl
+    """
+    if model_zip_path is None or steps is None:
+        return None
+    directory = os.path.dirname(model_zip_path)
+    rb = os.path.join(directory, f"{name_prefix}_replay_buffer_{steps}_steps.pkl")
+    return rb if os.path.exists(rb) else None
+
 
 # def notify_email(subject, body):
 #     # set via env vars or your secrets manager

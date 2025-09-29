@@ -19,14 +19,13 @@ environment_config:
 training_config:
   total_timesteps: 1000000                        # Total training timesteps
   runs_base: "/home/pid_rl/rl_training/runs"            # Base directory for all runs
-  algo: "ddpg"                                 # Algorithm name for run dir
+  algo: "ddpg"    # "ddpg", "td3"
   mission: "hover"                                
-  model_name_prefix: "ddpg_ardupilot"          # Model name prefix
-  progress_bar: true                           # Show training progress bar
-  reset_num_timesteps: false                    # Reset timestep counter
+  model_name_prefix: "ddpg_ardupilot"      # "ddpg_ardupilot", "td3_ardupilot"        
+  progress_bar: true                       
+  reset_num_timesteps: false               
 
-# DDPG algorithm parameters
-# Core hyperparameters for the DDPG algorithm
+
 ddpg_params:
   learning_rate: 0.001                          # Learning rate for actor and critic networks
   buffer_size: 100000                           # Size of replay buffer
@@ -40,26 +39,53 @@ ddpg_params:
     type: "NormalActionNoise"                   # Noise type: NormalActionNoise
     mean: 0.0                                   # Mean of noise distribution
     sigma: 0.1                                  # Standard deviation of noise
+  optimize_memory_usage: false                  # Whether to optimize memory usage
+  n_steps: -1                                   # Steps per update (default -1)
   verbose: 1                                    # Verbosity level
   policy_kwargs:
     net_arch: 
-      pi: [256, 256]  # 2 hidden layers, each with 256 units (for both actor and critic)
-      qf: [256, 256]  # 2 hidden layers, each with 256 units (for both actor and critic)
-  device: "cuda"                               # Device for training (auto, cpu, cuda)
-  _init_setup_model: true                      # for ddpg 
+      pi: [256, 256]  # Actor (policy) network architecture
+      qf: [256, 256]  # Critic (value) network architecture
+  seed: null                                     # Random seed (optional)
+  device: "cuda"                                # Device for training (auto, cpu, cuda)
+  _init_setup_model: true                       # For DDPG specific initialization
+  tensorboard_log: "/path/to/tensorboard/log"   # Path for TensorBoard logging
 
 
-# Callbacks configuration
-# Callbacks for logging, checkpointing, and evaluation during training
+td3_params:
+  learning_rate: 0.001                          # Learning rate for actor and critic networks
+  buffer_size: 1000000                          # Size of replay buffer
+  learning_starts: 5000                         # Steps before learning begins
+  batch_size: 1024                              # Batch size for training
+  tau: 0.005                                    # Soft update coefficient for target networks
+  gamma: 0.99                                   # Discount factor for future rewards
+  train_freq: 1                                 # Training frequency (every N steps)
+  gradient_steps: 15                            # Gradient steps per training update
+  action_noise:                                 # Action noise for exploration
+    type: "NormalActionNoise"                   # Noise type: NormalActionNoise
+    mean: 0.0                                   # Mean of noise distribution
+    sigma: 0.05                                  # Standard deviation of noise
+  verbose: 1                                    # Verbosity level
+  policy_kwargs:
+    net_arch: 
+      pi: [256, 256]  # Actor (policy) network architecture
+      qf: [256, 256]  # Critic (value) network architecture
+  target_noise: 0.2                             # Noise added to target Q-values
+  target_noise_clip: 0.5                        # Clip range for target noise
+  policy_delay: 2                               # Number of updates before updating actor
+  n_steps: -1                                   # Steps per update (default -1)
+  stats_window_size: 100                        # Size of the statistics window for updates
+  device: "cuda"                                # Device for training (auto, cpu, cuda)
+  _init_setup_model: true                       # For TD3 specific initialization
+
+
+
 callbacks:
   - type: "checkpoint"                         # Checkpoint callback type
     save_freq: 500                             # Save frequency for checkpoints
-    name_prefix: "ddpg_ardupilot"              # Checkpoint name prefix
+    name_prefix: "ddpg_ardupilot"      
   - type: "tensorboard"                         # Checkpoint callback type
 
-# Reward function configuration
-# Parameters for different reward function types
-# Comment out sections you don't want to use or set weights to 0
 reward_config:
   altitude:                        # Mode
     alt_w: 1                       # Weight for altitude error

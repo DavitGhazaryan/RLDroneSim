@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 
-import subprocess
 import time
-import os
-import signal
 import logging
 import atexit
 import socket

@@ -10,53 +10,11 @@ from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.logger import configure
 from rl_training.utils.tb_callback import TensorboardCallback
+from rl_training.utils.utils import create_action_noise_from_config, _latest_ckpt_path, _replay_for
 import numpy as np
 from rl_training.utils.utils import create_run_dir, save_config_copy, save_git_info
 import os, re
 
-def create_action_noise_from_config(action_noise_config, action_dim):
-    noise_type = action_noise_config.get('type', 'NormalActionNoise')
-    
-    if noise_type == 'NormalActionNoise':
-        from stable_baselines3.common.noise import NormalActionNoise
-        mean = action_noise_config.get('mean')
-        sigma = action_noise_config.get('sigma')
-        
-        return NormalActionNoise(
-            mean=mean * np.ones(action_dim),
-            sigma=sigma * np.ones(action_dim)
-        )
-    else:
-        from stable_baselines3.common.noise import NormalActionNoise
-        return NormalActionNoise(
-            mean=np.zeros(action_dim),
-            sigma=0.1 * np.ones(action_dim)
-        )
-
-def _latest_ckpt_path(path_like: str, name_prefix: str):
-    """
-    Accepts a directory or a specific .zip path.
-    Returns (model_zip_path, steps_int) or (None, None) if not found.
-    """
-    print(path_like, name_prefix)
-    if path_like is None:
-        return None, None
-    if os.path.isfile(path_like) and path_like.endswith(".zip"):
-        m = re.search(r"_(\d+)_steps\.zip$", os.path.basename(path_like))
-        steps = int(m.group(1)) if m else None
-        return path_like, steps
-    return None, None
-
-def _replay_for(model_zip_path: str, steps: int, name_prefix: str):
-    """
-    Finds the replay buffer file that matches the given model steps.
-    Expects: <dir>/<name_prefix>_replay_buffer_<steps>_steps.pkl
-    """
-    if model_zip_path is None or steps is None:
-        return None
-    directory = os.path.dirname(model_zip_path)
-    rb = os.path.join(directory, f"{name_prefix}_replay_buffer_{steps}_steps.pkl")
-    return rb if os.path.exists(rb) else None
 
 def train_ddpg_agent(env, config, run_dirs, checkpoint: str | None = None):
     """
@@ -114,7 +72,6 @@ def train_ddpg_agent(env, config, run_dirs, checkpoint: str | None = None):
         model = DDPG(
             "MlpPolicy",
             env,
-            action_noise=action_noise,
             learning_rate=ddpg_config.get('learning_rate'),
             buffer_size=ddpg_config.get('buffer_size'),
             learning_starts=ddpg_config.get('learning_starts'),
@@ -123,12 +80,17 @@ def train_ddpg_agent(env, config, run_dirs, checkpoint: str | None = None):
             gamma=ddpg_config.get('gamma'),
             train_freq=ddpg_config.get('train_freq'),
             gradient_steps=ddpg_config.get('gradient_steps'),
-            verbose=ddpg_config.get('verbose', 1),
-            tensorboard_log=tensorboard_log,
-            policy_kwargs=policy_kwargs,
-            seed=ddpg_config.get('seed'),
-            device=ddpg_config.get('device', "auto"),
-            _init_setup_model=ddpg_config.get('_init_setup_model', True)
+            optimize_memory_usage=ddpg_config.get('optimize_memory_usage', False),  # Optimization for memory usage
+            action_noise=action_noise,  # Action noise for exploration (NormalActionNoise or others)
+            replay_buffer_class=None,  # Optionally pass a custom replay buffer class
+            replay_buffer_kwargs=None,  # Optionally pass kwargs for custom replay buffer
+            n_steps=ddpg_config.get('n_steps', -1),  # Number of steps to collect per update (default -1)
+            policy_kwargs=policy_kwargs,  # Policy network architecture (e.g., MLP)
+            verbose=ddpg_config.get('verbose', 1),  # Verbosity level (0 = silent, 1 = progress bar)
+            seed=ddpg_config.get('seed'),  # Seed for reproducibility
+            device=ddpg_config.get('device', "auto"),  # Device to train on (cpu, cuda)
+            _init_setup_model=ddpg_config.get('_init_setup_model', True),  # Whether to initialize model automatically
+            tensorboard_log=tensorboard_log  # Path for TensorBoard logging
         )
 
     callbacks = []
@@ -219,28 +181,6 @@ def main():
         # Train (fresh or resume)
         model = train_ddpg_agent(env, config, run_dirs, checkpoint=checkpoint)
 
-        # # Evaluate & save final model
-        # if model is not None:
-        #     n_eval = (config.get("evaluation_config") or {}).get("n_eval_episodes", 5)
-        #     results = evaluate_agent(model, env, n_eval)
-
-        #     model_name_prefix = training_config.get('model_name_prefix', 'ddpg_ardupilot')
-        #     model_path = os.path.join(run_dirs['models_dir'], f"{model_name_prefix}_final")
-        #     model.save(model_path)
-        #     print(f"\n💾 Model saved to: {model_path}")
-
-        #     save_metrics_json(results, run_dirs['metrics_path'])
-        #     try:
-        #         print("\n📂 Run directory contents:")
-        #         out = subprocess.check_output([
-        #             "bash", "-lc",
-        #             f"ls -la '{run_dirs['run_dir']}' && echo '---' && find '{run_dirs['run_dir']}' -maxdepth 2 -type d -print"
-        #         ], stderr=subprocess.STDOUT)
-        #         print(out.decode())
-        #     except Exception as e:
-        #         print(f"⚠️ Could not list run directory: {e}")
-        # else:
-        #     print("❌ Training failed - Stable Baselines3 not available")
 
     except Exception as e:
         print(f"\n❌ Error occurred: {e}")
