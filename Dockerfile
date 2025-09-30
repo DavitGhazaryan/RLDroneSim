@@ -76,6 +76,7 @@ RUN apt-get update && apt-get install -y \
 # Clone ArduPilot
 RUN git clone https://github.com/ArduPilot/ardupilot.git && \
     cd ardupilot && \
+    git checkout b07cc04124 && \
     git submodule update --init --recursive
 
 # Create non-root user for running scripts
