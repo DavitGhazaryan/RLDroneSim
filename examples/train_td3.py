@@ -13,8 +13,6 @@ import numpy as np
 from rl_training.utils.utils import create_run_dir, save_config_copy, save_git_info, create_action_noise_from_config, _latest_ckpt_path, _replay_for
 import os, re
 
-def linear_schedule(progress_remaining):
-    return 0.001 * progress_remaining
 
 
 def train_td3_agent(env, config, run_dirs, checkpoint: str | None = None):
@@ -24,6 +22,7 @@ def train_td3_agent(env, config, run_dirs, checkpoint: str | None = None):
       - path to model .zip OR directory containing checkpoints
         (e.g., '.../models' or '.../models/td3_ardupilot_30_steps.zip')
     """
+
     # setup configs
     training_config = config.get('training_config', {})
     td3_config = config.get('td3_params')  # Changed ddpg_params to td3_params
@@ -55,6 +54,10 @@ def train_td3_agent(env, config, run_dirs, checkpoint: str | None = None):
     else:
         model_zip, steps = (None, None)
 
+    def linear_schedule(progress_remaining):
+        return td3_config.get('learning_rate') * progress_remaining
+
+
     if model_zip:
         print(f"📦 Resuming from checkpoint: {model_zip}")
         model = TD3.load(model_zip, env=env, device=td3_config.get('device'))  # Changed DDPG to TD3
@@ -72,7 +75,7 @@ def train_td3_agent(env, config, run_dirs, checkpoint: str | None = None):
         model = TD3(
             "MlpPolicy",
             env,
-            learning_rate=linear_schedule(td3_config.get('learning_rate')),
+            learning_rate=linear_schedule,
             buffer_size=td3_config.get('buffer_size'),
             learning_starts=td3_config.get('learning_starts'),
             batch_size=td3_config.get('batch_size'),
