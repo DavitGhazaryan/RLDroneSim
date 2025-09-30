@@ -72,7 +72,7 @@ td3_params:
       qf: [256, 256]  # Critic (value) network architecture
   target_noise: 0.2                             # Noise added to target Q-values
   target_noise_clip: 0.5                        # Clip range for target noise
-  policy_delay: 2                               # Number of updates before updating actor
+  policy_delay: 3                               # Number of updates before updating actor
   n_steps: -1                                   # Steps per update (default -1)
   stats_window_size: 100                        # Size of the statistics window for updates
   device: "cuda"                                # Device for training (auto, cpu, cuda)
@@ -128,7 +128,7 @@ sitl_config:
   ideal_sensors: true                          # Use ideal sensor models
   count: null                                  # Number of vehicle instances
   location: null                               # Home location: [lat, lon, alt, yaw]
-  speedup: 10                                   # Simulation speed multiplier
+  speedup: 20                                   # Simulation speed multiplier
   wipe_eeprom: true                            # Clear EEPROM on startup
   use_dir: null                                # Custom directory for SITL
   delay_start: null                            # Startup delay in seconds
