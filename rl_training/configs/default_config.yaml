@@ -70,7 +70,7 @@ td3_params:
     net_arch: 
       pi: [256, 256]  # Actor (policy) network architecture
       qf: [256, 256]  # Critic (value) network architecture
-  target_noise: 0.2                             # Noise added to target Q-values
+  target_policy_noise: 0.2
   target_noise_clip: 0.5                        # Clip range for target noise
   policy_delay: 3                               # Number of updates before updating actor
   n_steps: -1                                   # Steps per update (default -1)
