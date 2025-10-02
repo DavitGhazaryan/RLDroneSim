@@ -198,8 +198,8 @@ def validate_config(config, model):
     return True
 
 
-def _safe_mkdir(path: str) -> str:
-    os.makedirs(path, exist_ok=True)
+def _safe_mkdir(path: str, mode: int = 0o777) -> str:
+    os.makedirs(path, exist_ok=True, mode=mode)
     return path
 
 def _find_run_root(p: Path) -> Path | None:
@@ -233,8 +233,8 @@ def create_run_dir(base_dir: str, algo: str, mission: str,
         # Ensure expected subfolders exist
         tb_dir = (run_root / "tb")
         models_dir = (run_root / "models")
-        _safe_mkdir(tb_dir.as_posix())
-        _safe_mkdir(models_dir.as_posix())
+        _safe_mkdir(tb_dir.as_posix(), mode=0o777)
+        _safe_mkdir(models_dir.as_posix(), mode=0o777)
         return {
             'run_dir': run_root.as_posix(),
             'tb_dir': tb_dir.as_posix(),
@@ -250,8 +250,8 @@ def create_run_dir(base_dir: str, algo: str, mission: str,
     run_dir = os.path.join(base_dir, algo, mission, f"{stamp}{suffix}")
     tb_dir = os.path.join(run_dir, "tb")
     models_dir = os.path.join(run_dir, "models")
-    _safe_mkdir(tb_dir)
-    _safe_mkdir(models_dir)
+    _safe_mkdir(tb_dir, mode=0o777)
+    _safe_mkdir(models_dir, mode=0o777)
     return {
         'run_dir': run_dir,
         'tb_dir': tb_dir,
@@ -272,6 +272,7 @@ def save_config_copy(config: dict, cfg_path: str) -> None:
         trimmed = {k: config.get(k) for k in config}
         with open(cfg_path, 'w') as f:
             yaml.safe_dump(trimmed if trimmed else config, f, sort_keys=False)
+        os.chmod(cfg_path, 0o777)
     except Exception as exc:
         print(f"⚠️ Could not write config copy to {cfg_path}: {exc}")
 
@@ -288,6 +289,7 @@ def save_git_info(git_path: str) -> None:
             f.write(f"commit: {commit}\n")
             f.write(f"branch: {branch}\n")
             f.write(f"state: {dirty}\n")
+        os.chmod(git_path, 0o777)
     except Exception as exc:
         try:
             with open(git_path, 'w') as f:
@@ -300,6 +302,7 @@ def save_metrics_json(metrics: dict, metrics_path: str) -> None:
     try:
         with open(metrics_path, 'w') as f:
             json.dump(metrics, f, indent=2)
+        os.chmod(metrics_path, 0o777)
     except Exception as exc:
         print(f"⚠️ Could not write metrics to {metrics_path}: {exc}")
 
