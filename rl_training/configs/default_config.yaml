@@ -34,7 +34,7 @@ ddpg_params:
   tau: 0.005                                    # Soft update coefficient for target networks
   gamma: 0.99                                   # Discount factor for future rewards
   train_freq: 1                                 # Training frequency (every N steps)
-  gradient_steps: 3                             # Gradient steps per training update
+  gradient_steps: 10                             # Gradient steps per training update
   action_noise:                                 # Action noise for exploration
     type: "NormalActionNoise"                   # Noise type: NormalActionNoise
     mean: 0.0                                   # Mean of noise distribution
@@ -60,7 +60,7 @@ td3_params:
   tau: 0.005                                    # Soft update coefficient for target networks
   gamma: 0.99                                   # Discount factor for future rewards
   train_freq: 1                                 # Training frequency (every N steps)
-  gradient_steps: 15                            # Gradient steps per training update
+  gradient_steps: 10                            # Gradient steps per training update
   action_noise:                                 # Action noise for exploration
     type: "NormalActionNoise"                   # Noise type: NormalActionNoise
     mean: 0.0                                   # Mean of noise distribution
