@@ -76,23 +76,13 @@ class ArduPilotSITL(Drone):
         time.sleep(5)
 
     def reset(self, pose, attitude):
-        start_pause = time.time()
         self.gazebo.pause_simulation()
-        end_pause = time.time()
-        print(f"pausing service time {end_pause -start_pause}")
-        start_transport = time.time()
+
         self.gazebo.transport_position(self.name, pose, attitude)
-        end_transport = time.time()
-        print(f"transporting service time {end_transport -start_transport}")
-        start_resume = time.time()
+
         self.gazebo.resume_simulation()
-        end_resume = time.time()
-        print(f"resuming service time {end_resume -start_resume}")
     
-        star_reset = time.time()
         self.send_reset(pose[1], pose[0], pose[2])
-        end_reset = time.time()
-        print(f"resetting command time {end_reset -star_reset}")
 
     def start_sitl(self):
         if self.is_running():
@@ -100,7 +90,7 @@ class ArduPilotSITL(Drone):
         cmd = self._build_command()
 
         self.process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=False,
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=False,
             cwd=str(self.ardupilot_path),
         )
         self._wait_for_startup()      # ensures that the process is running and the port(s) are available
@@ -151,9 +141,6 @@ class ArduPilotSITL(Drone):
         # Map vehicle types to their parameter file names
         vehicle_param_map = {
             'ArduCopter': 'copter.parm',
-            'ArduPlane': 'plane.parm', 
-            'ArduRover': 'rover.parm',
-            'ArduSub': 'sub.parm'
         }
         
         # Use frame-specific params if available, otherwise fall back to vehicle default

@@ -54,20 +54,20 @@ class GazeboInterface:
         if self._config.get('verbose'):
             cmd.append('-v 4')
         cmd.append("--physics-engine=gz-physics-dartsim-plugin")
+
+        env = os.environ.copy()
+        env["GZ_IP"] = "127.0.0.1"
+        env["GZ_TRANSPORT_TOPIC_STATISTICS"] = "0"
+
         try:
-            # self._process = subprocess.Popen(
-            #     cmd,
-            #     stdout=subprocess.DEVNULL,
-            #     stderr=subprocess.PIPE,
-            #     start_new_session=False,
-            #     preexec_fn=os.sched_setaffinity(0, set(range(15)))
-            #     )
 
             self._process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                start_new_session=False)
+                stderr=subprocess.DEVNULL,
+                start_new_session=False,
+                env=env
+                )
 
             self._wait_for_startup()
         except Exception as e:

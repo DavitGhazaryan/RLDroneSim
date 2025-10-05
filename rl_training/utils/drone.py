@@ -4,7 +4,7 @@ import time
 import logging
 import atexit
 import socket
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 from pymavlink import mavutil
 

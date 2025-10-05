@@ -1,8 +1,5 @@
-import gymnasium as gym
-from gymnasium.utils import seeding
-from gymnasium import spaces
-
 import numpy as np
+
 import logging
 import sys
 import math
@@ -13,8 +10,7 @@ from functools import partial
 sys.path.insert(0, "/home/student/Dev/pid_rl")
 
 from rl_training.utils.drone import Drone
-from rl_training.utils.ardupilot_sitl import ArduPilotSITL
-from rl_training.utils.utils import euler_to_quaternion, nrm
+from rl_training.utils.utils import  nrm
 logger = logging.getLogger("Env")
 from enum import Enum, auto
 
@@ -24,17 +20,14 @@ class Termination(Enum):
     FLIP = auto()           # flip detected
     FAR = auto()            # too far from target
 
-class BaseEnv(gym.Env):
+class BaseEnv:
     """
     Defines the main API of the Environment. main component is the drone which can be either hardware or Gazebo+SITL.
     """
     
-    def __init__(self, config, hardware=False, instance=1):
+    def __init__(self, config, instance=1):
         super().__init__()
-        self.np_random, _ = seeding.np_random(None)  # init
 
-        self.hardware = hardware
-        
         self.config = config.get('environment_config', {})
         self.max_episode_steps = self.config.get('max_episode_steps')
         self.mode = self.config.get('mode')
@@ -46,8 +39,8 @@ class BaseEnv(gym.Env):
         self.takeoff_altitude = self.config['takeoff_altitude']
         self.verbose = self.config['verbose']  # internal logging  TODO
 
-        self.drone = Drone(config['drone_config'], self.verbose) if self.hardware else ArduPilotSITL(config['sitl_config'], config['gazebo_config'], instance, self.verbose)
-
+        self.drone = None
+        
         # Episode tracking
         self.initialized = False
         self.episode_step = 0
@@ -56,114 +49,28 @@ class BaseEnv(gym.Env):
         self.ep_initial_attitude = None   # {pitch_deg:, roll_deg:, yaw_deg:}
         self.ep_initial_gains = {}      # {gain_name: value}
         self.first_initial_gains = {}      # {gain_name: value}
-        
+        self.curr_gains = {}
         self.mission_function = None
         self.goal_orientation = None   # {pitch_deg:, roll_deg:, yaw_deg:}
         self.goal_pose = None          # {latitude_deg:, longitude_deg:, relative_altitude_m:}
         self.eps_stable_time = 0
         self.max_stable_time = 0
 
-        # Initialize spaces
-        self.observation_space = self._define_observation_space()
-        self.action_space = self._define_action_space()
 
         atexit.register(self.close)
     
-    def _define_observation_space(self):
-        """
-        Observations are flattened into a single Box space for Stable Baselines compatibility.
-        Order: [observable_gains, observable_states]
-        """
-        # Create bounds arrays
-        lows = []
-        highs = []
-        
-        # Add bounds for gains (0 to 100)
-        for _ in self.observable_gains:
-            lows.append(0.0)
-            highs.append(100.0)
-        
-        # Add bounds for states (-100 to 100)
-        for _ in self.observable_states:
-            lows.append(-100.0)
-            highs.append(100.0)
-        
-        return spaces.Box(
-            low=np.array(lows, dtype=np.float32),
-            high=np.array(highs, dtype=np.float32),
-            dtype=np.float32
-        )
-    
-    def _define_action_space(self):
-        """
-        Action space is flattened into a single Box space for Stable Baselines compatibility.
-        Actions represent PID gain adjustments.
-        """
-        # Calculate total dimension
-        total_dim = len(self.action_gains)
-        lows = np.array([-5.0] * total_dim, dtype=np.float32)
-        highs = np.array([5.0] * total_dim, dtype=np.float32)
-        
-        return spaces.Box(
-            low=lows,
-            high=highs,
-            dtype=np.float32
-        )
-    
+    # overwritten in subclass
     def reset(self, seed=None, options=None):
-        """Reset the environment to initial state."""
-        super().reset(seed=seed)             # sets self.np_random
-        print("############################ RESET #############################################")
+        print("RESET #######")
+        
         start = time.time()
-
-        if hasattr(self.action_space, "seed"):
-            self.action_space.seed(seed)
-        if hasattr(self.observation_space, "seed"):
-            self.observation_space.seed(seed)
-        self.episode_step = 0
-
+        print("Called from here")
         if not self.initialized:
-            self.drone.start()
-
-            master = self.drone._get_mavlink_connection()  
-            hb = master.wait_heartbeat()
-            messages = master.messages
-            
-            for gain in self.action_gains:
-                self.ep_initial_gains[gain] = self.drone.get_param(gain)
-                self.first_initial_gains[gain] = self.drone.get_param(gain)
-
-            self.ep_initial_pose = {
-                'x_m': messages["LOCAL_POSITION_NED"].y,
-                'y_m': messages["LOCAL_POSITION_NED"].x,
-                'z_m': - messages["LOCAL_POSITION_NED"].z
-            }
-            attitude = messages["ATTITUDE"]
-
-            self.ep_initial_attitude = {
-                'pitch_deg': math.degrees(attitude.pitch),
-                'roll_deg': math.degrees(attitude.roll),
-                'yaw_deg': math.degrees(attitude.yaw)
-            }
-            self.initialized = True
-            
-            if not self.hardware:
-                self.mission_function = self._setup_mission()   # same x, y, z
-                self.mission_function()
-
+            self.drone = Drone(config['drone_config'], self.verbose) 
+            self._initialize_system()
         else:
             self.eps_stable_time = 0
             self.max_stable_time = 0
-
-            if not self.hardware:
-                # works only for simulation
-                self.ep_initial_pose, self.ep_initial_attitude, self.ep_initial_gains = self._get_random_initial_state()
-                start_setting = time.time()
-                for gain in self.action_gains:
-                    self.drone.set_param_and_confirm(gain, self.ep_initial_gains[gain])
-                end_setting = time.time()
-                print(f"Param Setting time {end_setting-start_setting}")
-                self.drone.reset([self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]], euler_to_quaternion(None))            
             
         self.drone.wait(self.action_dt)   # no need to normalize the sleep time with speedup
         observation, info = self._get_observation(self.ep_initial_gains)
@@ -171,8 +78,54 @@ class BaseEnv(gym.Env):
 
         print(f" Reset duration {end - start}")
         return observation, info  # observation, info
-    
-    
+     
+
+    def step(self, action):
+        """
+        Handle flattened actions for Stable Baselines compatibility.
+        Actions are changes to PID parameters that need to be applied.
+        """
+        self.episode_step += 1
+        
+        start = time.time()
+        for i, var in enumerate(self.action_gains):
+            self.curr_gains[var] = max(self.curr_gains[var] +  action[i], 0)
+            self.drone.set_param_and_confirm(var, self.curr_gains[var])
+
+        self.drone.wait(self.action_dt)   # no need to normalize the sleep time with speedup
+
+
+        # first get more complete info then construct observation from that        
+        master = self.drone._get_mavlink_connection()
+        master.wait_heartbeat()
+        messages = master.messages    # same messages are used for single step
+
+
+        observation, info = self._get_observation(self.curr_gains, messages)
+
+        terminated, reason = self._check_terminated(messages)
+        if terminated:
+            truncated = False
+        else:
+            terminated = False
+            truncated = self.episode_step >= self.max_episode_steps
+            if truncated:
+                pass
+
+        # Create proper info dictionary
+        info = {
+            'reason': reason,
+            'episode_step': self.episode_step,
+        }
+        reward = self._compute_reward(messages, reason)
+        print(reward)
+        for i, var in enumerate(self.action_gains):
+            info[var] = self.curr_gains[var]
+        end = time.time()
+        print(f"Step time {end - start}")
+
+        return observation, reward, terminated, truncated, info
+
     def _get_observation(self, new_gains, messages=None):
 
         # Initialize flattened observation array
@@ -205,109 +158,34 @@ class BaseEnv(gym.Env):
         info = {}
         return observation, info 
 
-    # for simulation related code
-    def _setup_mission(self):
-        if self.hardware:
-            raise NotImplementedError("Mission is for sitl.")
-        match self.mode:
-            case 'altitude':
-                self.goal_pose = {
-                    'x_m': self.ep_initial_pose['x_m'],
-                    'y_m': self.ep_initial_pose['y_m'],
-                    'z_m': self.takeoff_altitude + 0.19
-                }
-                self.goal_orientation = self.ep_initial_attitude.copy()
-
-                return partial(self.drone.takeoff_drone, self.takeoff_altitude)
-            
-            case 'position' | 'attitude' | 'stabilize' | 'althold':
-                raise NotImplementedError("Position, attitude, stabilize, and althold modes are not implemented yet")
-            case _:
-                raise ValueError(f"Invalid mode: {self.mode}")
-
-    def _get_random_initial_state(self):
-        initial_gains = {}
+    def _initialize_system(self):
+        if self.initialized:
+            raise Exception("Already initialized ...")
+            return None
+        self.drone.start()
+        master = self.drone._get_mavlink_connection()  
+        hb = master.wait_heartbeat()
+        messages = master.messages
+        
         for gain in self.action_gains:
-            initial_gains[gain] = max(self.first_initial_gains[gain] + self.np_random.uniform(-2.0, 2.0), 0)
-        return {
-            'x_m': self.goal_pose['x_m'],
-            'y_m': self.goal_pose['y_m'],    
-            'z_m': max(self.goal_pose['z_m']+ self.np_random.uniform(-2.0, 2.0), 0.3) 
-        }, self.ep_initial_attitude, initial_gains
-    
-    def step(self, action):
-        """
-        Handle flattened actions for Stable Baselines compatibility.
-        Actions are changes to PID parameters that need to be applied.
-        """
-        self.episode_step += 1
+            value = self.drone.get_param(gain)
+            self.ep_initial_gains[gain] =value
+            self.first_initial_gains[gain] = value
+            self.curr_gains[gain] = value
 
-        if len(action) != len(self.action_gains):
-            raise ValueError(f"Expected action of length {len(self.action_gains)}, got {len(action)}")
-        start_getting = time.time()
-        # Get current gains
-        new_gains = {}
-        for variable in self.action_gains:
-            new_gains[variable] = self.drone.get_param(variable)
-        end_getting = time.time()
-        print(f"getting curr gains {end_getting-start_getting}")
-        
-        start_setting = time.time()
-        for i, var in enumerate(self.action_gains):
-            new_gains[var] += action[i]
-            new_gains[var] = max(new_gains[var], 0)
-            self.drone.set_param_and_confirm(var, new_gains[var])
-        end_setting = time.time()
-
-        print(f"setting new gains {end_setting-start_setting}")
-
-        start_wait = time.time()
-        self.drone.wait(self.action_dt)   # no need to normalize the sleep time with speedup
-        end_wait = time.time()
-
-        print(f"action_dt real {end_wait - start_wait}")
-
-        start_msg = time.time()        
-        # first get more complete info then construct observation from that        
-        master = self.drone._get_mavlink_connection()
-        master.wait_heartbeat()
-        messages = master.messages    # same messages are used for single step
-        end_msg = time.time()
-
-        print(f"message reading {end_msg-start_msg}")
-
-        start_obs = time.time()
-        observation, info = self._get_observation(new_gains, messages)
-        end_obs = time.time()
-        print(f"get observation {end_obs-start_obs}")
-
-        start_boil = time.time()
-        terminated, reason = self._check_terminated(messages)
-        if terminated:
-            truncated = False
-        else:
-            terminated = False
-            truncated = self.episode_step >= self.max_episode_steps
-            if truncated:
-                pass
-
-        
-        # Create proper info dictionary
-        info = {
-            'reason': reason,
-            'episode_step': self.episode_step,
+        self.ep_initial_pose = {
+            'x_m': messages["LOCAL_POSITION_NED"].y,
+            'y_m': messages["LOCAL_POSITION_NED"].x,
+            'z_m': - messages["LOCAL_POSITION_NED"].z
         }
-        reward = self._compute_reward(messages, reason)
-        print(reward)
-        for i, var in enumerate(self.action_gains):
-            info[var] = new_gains[var]
-        end_boil = time.time()
-        print(f"boilerplate code {end_boil -start_boil}")
-        return observation, reward, terminated, truncated, info
-        
-    def close(self):
-        """Clean up resources."""
-        self.drone.close()
+        attitude = messages["ATTITUDE"]
+        self.ep_initial_attitude = {
+            'pitch_deg': math.degrees(attitude.pitch),
+            'roll_deg': math.degrees(attitude.roll),
+            'yaw_deg': math.degrees(attitude.yaw)
+        }
+        self.initialized = True
+
 
     def _check_vicinity_status(self, pos_error_cm, alt_error_cm):
         """
@@ -436,17 +314,15 @@ class BaseEnv(gym.Env):
         else:
             raise NotImplementedError()
 
+    def close(self):
+        """Clean up resources."""
+        if self.drone:
+            self.drone.close()
+
 
 if __name__ == "__main__":
-    from gymnasium.utils.env_checker import check_env, env_reset_passive_checker, env_step_passive_checker, check_step_determinism  
     from rl_training.utils.utils import load_config
     config = load_config('/home/pid_rl/rl_training/configs/default_config.yaml')
 
     env = BaseEnv(config)
-    # check_env(env)
-    # env_reset_passive_checker(env)
-    # env_step_passive_checker(env, env.action_space.sample())
-
-    # ==== Check the step method ====
-    # check_step_determinism(env)
     env.close()

@@ -3,17 +3,15 @@
 import sys
 sys.path.insert(0, "/home/pid_rl")
 
-from rl_training.environments import BaseEnv
-from rl_training.utils.utils import load_config, evaluate_agent
+from rl_training.environments import SimGymEnv
+from rl_training.utils.utils import load_config
 from stable_baselines3 import DDPG
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.logger import configure
 from rl_training.utils.tb_callback import TensorboardCallback
 from rl_training.utils.utils import create_action_noise_from_config, _latest_ckpt_path, _replay_for
-import numpy as np
 from rl_training.utils.utils import create_run_dir, save_config_copy, save_git_info
-import os, re
+import os
 
 
 def train_ddpg_agent(env, config, run_dirs, checkpoint: str | None = None):
@@ -121,7 +119,7 @@ def train_ddpg_agent(env, config, run_dirs, checkpoint: str | None = None):
     model.learn(
         total_timesteps=total_timesteps,
         callback=callbacks if len(callbacks) > 1 else callbacks[0] if callbacks else None,
-        log_interval=10,
+        log_interval=training_config.get('log_interval'),
         progress_bar=training_config.get('progress_bar'),
         reset_num_timesteps=reset_flag,
         tb_log_name=tb_run_name 
@@ -152,7 +150,7 @@ def main():
 
     try:
         config = load_config(config_path)
-        env = BaseEnv(config, hardware=False, instance=instance)
+        env = SimGymEnv(config, instance=instance)
 
         # Prepare (or reuse) run directory structure
         training_config = config.get('training_config', {})

@@ -3,7 +3,7 @@
 import sys
 sys.path.insert(0, "/home/pid_rl")
 
-from rl_training.environments import BaseEnv
+from rl_training.environments import SimGymEnv
 from rl_training.utils.utils import load_config, evaluate_agent
 
 from stable_baselines3.common.monitor import Monitor
@@ -22,7 +22,7 @@ def main():
     
     print("🔧 Creating  ArdupilotEnv...")
     
-    env = BaseEnv(config, hardware=False)        
+    env = SimGymEnv(config)        
     env = Monitor(env)
     model = TD3.load(model_zip, env=env, device=config.get('td3_params').get('device'))
     n_eval = 50

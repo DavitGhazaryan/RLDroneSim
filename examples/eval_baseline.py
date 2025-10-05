@@ -7,7 +7,7 @@ Evaluate the Default PID gains as baseline, using the same reward function and p
 import sys
 sys.path.insert(0, "/home/pid_rl")
 
-from rl_training.environments import BaseEnv
+from rl_training.environments import SimGymEnv
 from rl_training.utils.utils import load_config, validate_config, evaluate_agent
 
 from stable_baselines3.common.monitor import Monitor
@@ -25,7 +25,7 @@ def main():
         config = load_config(config_path)        
         print("🔧 Creating  ArdupilotEnv...")
         
-        env = BaseEnv(config)
+        env = SimGymEnv(config)
         
         env = Monitor(env)
 

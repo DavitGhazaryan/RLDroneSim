@@ -1,44 +1,45 @@
-#!/usr/bin/env python3
-
-"""
-
-File is intended to check the SEPARATED ACTOR NETWORK in the simulation environment.
-Uses the same Gym Compatible Environment as the was used during the training.
-"""
-
-import sys
-sys.path.insert(0, "/home/pid_rl")
-import torch 
-import os
-import yaml
 import numpy as np
+import logging
+import sys
 import time
+import os 
+import torch
+import yaml
 
-from rl_training.environments import BaseEnv
+raise NotImplemented("The correct version is on Raspberry...")
 
-from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.ddpg import DDPG
-    
+from rl_training.environments.base_env import BaseEnv
+
+sys.path.insert(0, "/home/student/Dev/pid_rl")
+
+logger = logging.getLogger("Env")
+from enum import Enum, auto
+
+class Termination(Enum):    
+    ATTITUDE_ERR = auto()   # excessive attitude error
+    VEL_EXC = auto()        # velocity exceeded
+    FLIP = auto()           # flip detected
+    FAR = auto()            # too far from target
+
     
 def deploy(model_path):
-
-    # 1. Load actor Network only
+    """Static method to load the model, read the config, and set up the deployment loop."""
+    # 1. Load model
     model_file = os.path.join(model_path, "policy_actor_scripted.pt")
     if not os.path.exists(model_file):
         raise FileNotFoundError(f"Model file not found at {model_file}")
     actor = torch.jit.load(model_file, map_location="cpu").eval()
-
+    
     # 2. Load the environment configuration from cfg.yaml
     config_file = os.path.join(model_path, "cfg.yaml")
-    print(config_file)
     if not os.path.exists(config_file):
         raise FileNotFoundError(f"Config file not found at {config_file}")
     with open(config_file, "r") as f:
         config = yaml.safe_load(f)
-
+    
     # 3. Initialize the deployment environment
-    env = BaseEnv(config, hardware=False)
-    env.reset()
+    env = BaseEnv(config)
+    
     # 4. Start the deployment loop
     try:
         while True:
@@ -49,9 +50,11 @@ def deploy(model_path):
             # 4.3 Get the action from the actor (policy)
             with torch.no_grad():
                 action = actor(observation).squeeze(0).cpu().numpy()
-            # 4.4 Send action to the drone, observe result
-            obs, reward, terminated, truncated, info = env.step(action)
+            # 4.4 Send action to the drone
+            print("step")
+            env.step(action)
 
+            # time.sleep(0.1)
     except KeyboardInterrupt:
         print("Deployment stopped manually.")
     finally:
@@ -59,5 +62,7 @@ def deploy(model_path):
 
 
 if __name__ == "__main__":
-    # main() 
-    deploy("/home/pid_rl/rl_training/runs/ddpg/hover/20250929_190340/")
+    from rl_training.utils.utils import load_config
+    config = load_config('/home/pid_rl/rl_training/configs/default_config.yaml')
+
+    deploy("/home/student/Dev/pid_rl/models/ddpg_model")
