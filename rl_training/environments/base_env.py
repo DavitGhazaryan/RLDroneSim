@@ -61,10 +61,10 @@ class BaseEnv:
     
     # overwritten in subclass
     def reset(self, seed=None, options=None):
-        print("RESET #######")
+        # print("RESET #######")
         
-        start = time.time()
-        print("Called from here")
+        # start = time.time()
+        # print("Called from here")
         if not self.initialized:
             self.drone = Drone(config['drone_config'], self.verbose) 
             self._initialize_system()
@@ -74,9 +74,9 @@ class BaseEnv:
             
         self.drone.wait(self.action_dt)   # no need to normalize the sleep time with speedup
         observation, info = self._get_observation(self.ep_initial_gains)
-        end = time.time()
+        # end = time.time()
 
-        print(f" Reset duration {end - start}")
+        # print(f" Reset duration {end - start}")
         return observation, info  # observation, info
      
 
@@ -87,7 +87,7 @@ class BaseEnv:
         """
         self.episode_step += 1
         
-        start = time.time()
+        # start = time.time()
         for i, var in enumerate(self.action_gains):
             self.curr_gains[var] = max(self.curr_gains[var] +  action[i], 0)
             self.drone.set_param_and_confirm(var, self.curr_gains[var])
@@ -118,11 +118,11 @@ class BaseEnv:
             'episode_step': self.episode_step,
         }
         reward = self._compute_reward(messages, reason)
-        print(reward)
+        # print(reward)
         for i, var in enumerate(self.action_gains):
             info[var] = self.curr_gains[var]
-        end = time.time()
-        print(f"Step time {end - start}")
+        # end = time.time()
+        # print(f"Step time {end - start}")
 
         return observation, reward, terminated, truncated, info
 

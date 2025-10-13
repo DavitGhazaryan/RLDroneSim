@@ -74,7 +74,7 @@ class SimGymEnv(BaseEnv, gym.Env):
     def reset(self, seed=None, options=None):
         """Reset the environment to initial state."""
         gym.Env.reset(self, seed=seed)         
-        print("RESET ##############")
+        # print("RESET ##############")
         start = time.time()
 
         # if hasattr(self.action_space, "seed"):
@@ -105,7 +105,7 @@ class SimGymEnv(BaseEnv, gym.Env):
         observation, info = self._get_observation(self.ep_initial_gains)
         end = time.time()
 
-        print(f" Reset duration {end - start}")
+        # print(f" Reset duration {end - start}")
         return observation, info  # observation, info
 
     # for simulation related code

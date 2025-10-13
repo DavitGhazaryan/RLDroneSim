@@ -61,7 +61,7 @@ td3_params:
   tau: 0.005                                    # Soft update coefficient for target networks
   gamma: 0.99                                   # Discount factor for future rewards
   train_freq: 1                                 # Training frequency (every N steps)
-  gradient_steps: 5                            # Gradient steps per training update
+  gradient_steps: 10                            # Gradient steps per training update
   action_noise:                                 # Action noise for exploration
     type: "NormalActionNoise"                   # Noise type: NormalActionNoise
     mean: 0.0                                   # Mean of noise distribution
@@ -71,6 +71,8 @@ td3_params:
     net_arch: 
       pi: [256, 256]  # Actor (policy) network architecture
       qf: [256, 256]  # Critic (value) network architecture
+    share_features_extractor:
+      true
   target_policy_noise: 0.2
   target_noise_clip: 0.5                        # Clip range for target noise
   policy_delay: 3                               # Number of updates before updating actor
@@ -83,7 +85,7 @@ td3_params:
 
 callbacks:
   - type: "checkpoint"                         # Checkpoint callback type
-    save_freq: 500                             # Save frequency for checkpoints
+    save_freq: 1000                            # Save frequency for checkpoints
     name_prefix: "ddpg_ardupilot"      
   - type: "tensorboard"                         # Checkpoint callback type
 
@@ -129,7 +131,7 @@ sitl_config:
   ideal_sensors: true                          # Use ideal sensor models
   count: null                                  # Number of vehicle instances
   location: null                               # Home location: [lat, lon, alt, yaw]
-  speedup: 20                                   # Simulation speed multiplier
+  speedup: 25                                   # Simulation speed multiplier
   wipe_eeprom: true                            # Clear EEPROM on startup
   use_dir: null                                # Custom directory for SITL
   delay_start: null                            # Startup delay in seconds
@@ -151,5 +153,5 @@ sitl_config:
 # control the wind from the sdf file directly
 gazebo_config:
   sdf_file: '/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf'  # always write the version for 1 instance 
-  gui: false                                         
+  gui: false                                        
   verbose: false          # enables -v 4; internal logging of gz            
