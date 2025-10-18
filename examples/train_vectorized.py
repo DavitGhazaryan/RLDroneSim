@@ -238,7 +238,7 @@ def main():
         traceback.print_exc()
     finally:
         if 'env' in locals():
-            env.close()
+            env.close() # type: ignore
         print("\n🧹 Environment closed.")
 
 if __name__ == "__main__":

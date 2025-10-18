@@ -7,7 +7,7 @@ Uses the same Gym Compatible Environment as the was used during the training.
 
 import sys
 sys.path.insert(0, "/home/pid_rl")
-import torch 
+import torch  # type: ignore
 import os
 import yaml
 
