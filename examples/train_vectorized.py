@@ -5,10 +5,9 @@ sys.path.insert(0, "/home/pid_rl")
 
 from rl_training.environments import SimGymEnv
 from rl_training.utils.utils import load_config
-from stable_baselines3 import TD3  
-from stable_baselines3.common.callbacks import CheckpointCallback
-from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+from stable_baselines3.common.callbacks import CheckpointCallback       # type: ignore
+from stable_baselines3.common.monitor import Monitor                    # type: ignore
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize  # type: ignore
 
 from rl_training.utils.tb_callback import TensorboardCallback
 from rl_training.utils.utils import create_run_dir, save_config_copy, save_git_info, create_action_noise_from_config, _latest_ckpt_path, _replay_for
@@ -16,7 +15,7 @@ import os
 
 
 
-def train_td3_agent(env, config, run_dirs, checkpoint: str | None = None):
+def train_agent(env, config, run_dirs, checkpoint: str | None = None):
     """
     checkpoint:
       - None -> fresh training (current behavior)
@@ -25,27 +24,22 @@ def train_td3_agent(env, config, run_dirs, checkpoint: str | None = None):
     """
 
     # setup configs
-    training_config = config.get('training_config', {})
-    td3_config = config.get('td3_params')  # Changed ddpg_params to td3_params
+    training_config = config.get('training_config')
+    algo = training_config['algo']
+    algo_config = config.get(f'{algo}_params')
     callbacks_config = config.get('callbacks', [])
     tensorboard_log = run_dirs['tb_dir'] 
     
     total_timesteps = training_config.get('total_timesteps')
-    print(f"\n🚀 Starting TD3 training for {total_timesteps} timesteps...")
+    print(f"\n🚀 Starting {algo} training for {total_timesteps} timesteps...")
 
     action_dim = env.action_space.shape[0]
-    action_noise = create_action_noise_from_config(td3_config.get('action_noise'), action_dim)
+    action_noise = create_action_noise_from_config(algo_config.get('action_noise'), action_dim)
 
-    name_prefix = "td3_ardupilot"  # Changed prefix for TD3  
-    for callback_config in callbacks_config:
-        if callback_config.get('type') == 'checkpoint':
-            name_prefix = callback_config.get('model_name_prefix', name_prefix)
-            break
-
-    tb_run_name = training_config.get('tb_log_name', name_prefix)
-
+    tb_run_name = "run"
     if checkpoint:
-        model_zip, steps = _latest_ckpt_path(checkpoint, name_prefix)
+        raise NotImplementedError()
+        model_zip, steps = _latest_ckpt_path(checkpoint)
         existing = [d for d in os.listdir(tensorboard_log)
                 if d.startswith(tb_run_name) and os.path.isdir(os.path.join(tensorboard_log, d))]
         run_idx = len(existing)
@@ -54,49 +48,75 @@ def train_td3_agent(env, config, run_dirs, checkpoint: str | None = None):
         model_zip, steps = (None, None)
 
     def linear_schedule(progress_remaining):
-        return td3_config.get('learning_rate') * progress_remaining
-
+        return algo_config.get('learning_rate') * progress_remaining
 
     if model_zip:
         print(f"📦 Resuming from checkpoint: {model_zip}")
-        model = TD3.load(model_zip, env=env, device=td3_config.get('device'))  # Changed DDPG to TD3
+        raise NotImplementedError("REsuming is not implemented yet")
+        model = TD3.load(model_zip, env=env, device=algo_config.get('device'))
         model.action_noise = action_noise
 
-        rb_path = _replay_for(model_zip, steps, name_prefix)
+        rb_path = _replay_for(model_zip, steps, algo)
         if rb_path:
             print(f"🔄 Loading replay buffer: {rb_path}")
             model.load_replay_buffer(rb_path)
         else:
-            print("⚠️ Replay buffer not found for this checkpoint; continuing without it.")
-        
+            print("⚠️ Replay buffer not found for this checkpoint; continuing without it.")     
     else:
-        policy_kwargs = td3_config['policy_kwargs']
-        model = TD3(
-            "MlpPolicy",
-            env,
-            learning_rate=linear_schedule,
-            buffer_size=td3_config.get('buffer_size'),
-            learning_starts=td3_config.get('learning_starts'),
-            batch_size=td3_config.get('batch_size'),
-            tau=td3_config.get('tau'),
-            gamma=td3_config.get('gamma'),
-            train_freq=td3_config.get('train_freq'),
-            gradient_steps=td3_config.get('gradient_steps'),
-            action_noise=action_noise,  # For exploration (NormalActionNoise)
-            replay_buffer_class=None,   # Optionally customize the replay buffer class
-            replay_buffer_kwargs=None,  # Optionally customize the replay buffer kwargs
-            n_steps=td3_config.get('n_steps'),  # Default is -1, can be set for specific training steps
-            policy_delay=td3_config.get('policy_delay'),  # The number of steps to wait before updating policy
-            target_policy_noise=td3_config.get('target_policy_noise'),  # Noise for target policy smoothing
-            target_noise_clip=td3_config.get('target_noise_clip'),  # Clip range for target noise
-            stats_window_size=td3_config.get('stats_window_size'),  # Size of the statistics window for updates
-            verbose=td3_config.get('verbose'),  # Verbosity level (0 = silent, 1 = progress bar)
-            tensorboard_log=tensorboard_log,  # Path to log for TensorBoard
-            policy_kwargs=policy_kwargs,  # Policy network architecture
-            seed=td3_config.get('seed', None),  # Random seed for reproducibility
-            device=td3_config.get('device', "auto"),  # Device to run on (e.g., "cpu", "cuda")
-            _init_setup_model=td3_config.get('_init_setup_model', True)  # Whether to initialize model automatically
-        )
+        policy_kwargs = algo_config['policy_kwargs']
+        if algo == 'td3':
+            from stable_baselines3 import TD3   # type: ignore
+            model = TD3(
+                "MlpPolicy",
+                env,
+                learning_rate=linear_schedule,
+                buffer_size=algo_config.get('buffer_size'),
+                learning_starts=algo_config.get('learning_starts'),
+                batch_size=algo_config.get('batch_size'),
+                tau=algo_config.get('tau'),
+                gamma=algo_config.get('gamma'),
+                train_freq=algo_config.get('train_freq'),
+                gradient_steps=algo_config.get('gradient_steps'),
+                action_noise=action_noise,  # For exploration (NormalActionNoise)
+                replay_buffer_class=None,   # Optionally customize the replay buffer class
+                replay_buffer_kwargs=None,  # Optionally customize the replay buffer kwargs
+                n_steps=algo_config.get('n_steps'),  # Default is -1, can be set for specific training steps
+                policy_delay=algo_config.get('policy_delay'),  # The number of steps to wait before updating policy
+                target_policy_noise=algo_config.get('target_policy_noise'),  # Noise for target policy smoothing
+                target_noise_clip=algo_config.get('target_noise_clip'),  # Clip range for target noise
+                stats_window_size=algo_config.get('stats_window_size'),  # Size of the statistics window for updates
+                verbose=algo_config.get('verbose'),  # Verbosity level (0 = silent, 1 = progress bar)
+                tensorboard_log=tensorboard_log,  # Path to log for TensorBoard
+                policy_kwargs=policy_kwargs,  # Policy network architecture
+                seed=algo_config.get('seed', None),  # Random seed for reproducibility
+                device=algo_config.get('device', "auto"),  # Device to run on (e.g., "cpu", "cuda")
+                _init_setup_model=algo_config.get('_init_setup_model', True)  # Whether to initialize model automatically
+            )
+        else:
+            from stable_baselines3.ddpg import DDPG   # type: ignore
+            model = DDPG(
+                "MlpPolicy",
+                env,
+                learning_rate=algo_config.get('learning_rate'),
+                buffer_size=algo_config.get('buffer_size'),
+                learning_starts=algo_config.get('learning_starts'),
+                batch_size=algo_config.get('batch_size'),
+                tau=algo_config.get('tau'),
+                gamma=algo_config.get('gamma'),
+                train_freq=algo_config.get('train_freq'),
+                gradient_steps=algo_config.get('gradient_steps'),
+                optimize_memory_usage=algo_config.get('optimize_memory_usage', False),  # Optimization for memory usage
+                action_noise=action_noise,  # Action noise for exploration (NormalActionNoise or others)
+                replay_buffer_class=None,  # Optionally pass a custom replay buffer class
+                replay_buffer_kwargs=None,  # Optionally pass kwargs for custom replay buffer
+                n_steps=algo_config.get('n_steps', -1),  # Number of steps to collect per update (default -1)
+                policy_kwargs=policy_kwargs,  # Policy network architecture (e.g., MLP)
+                verbose=algo_config.get('verbose', 1),  # Verbosity level (0 = silent, 1 = progress bar)
+                seed=algo_config.get('seed'),  # Seed for reproducibility
+                device=algo_config.get('device', "auto"),  # Device to train on (cpu, cuda)
+                _init_setup_model=algo_config.get('_init_setup_model', True),  # Whether to initialize model automatically
+                tensorboard_log=tensorboard_log  # Path for TensorBoard logging
+            )
 
     callbacks = []
     for callback_config in callbacks_config:
@@ -106,7 +126,7 @@ def train_td3_agent(env, config, run_dirs, checkpoint: str | None = None):
             checkpoint_callback = CheckpointCallback(
                 save_freq=callback_config.get('save_freq'),
                 save_path=save_path,
-                name_prefix=name_prefix,
+                name_prefix=algo,
                 save_replay_buffer=True,
                 save_vecnormalize=True
             )
@@ -121,7 +141,7 @@ def train_td3_agent(env, config, run_dirs, checkpoint: str | None = None):
     reset_flag = training_config.get('reset_num_timesteps')
     if not reset_flag and model_zip:
         reset_flag = False
-    print(f"REset flag {reset_flag}")
+    print(f"Reset flag {reset_flag}")
     ## Main learning code
     print("🎯 Training started...")
     model.learn(
@@ -147,12 +167,10 @@ def main():
     if args.instance not in (1, 2):
         print("Error: argument must be 1 or 2.")
         sys.exit(1)
+
     instance = args.instance
     checkpoint = args.checkpoint
     print(f"Using value: {instance}")
-
-    print("🚁 ArdupilotEnv + Stable Baselines TD3 Experiment")  # Changed DDPG to TD3
-    print("=" * 70)
 
     config_path = '/home/pid_rl/rl_training/configs/default_config.yaml'
 
@@ -163,15 +181,12 @@ def main():
         # === VecEnv + Monitor + (maybe) load VecNormalize stats ===
         def make_env():
             return Monitor(SimGymEnv(config, instance=instance))
-
-
         dummy_vec = DummyVecEnv([make_env])
         venv = VecNormalize(dummy_vec, norm_obs=True, norm_reward=False, clip_obs=10.0)
 
-        # Prepare (or reuse) run directory structure
-        training_config = config.get('training_config', {})
-        algorithm = training_config.get('algo')
-        mission = training_config.get('mission')
+        training_config = config.get('training_config')
+        algorithm = training_config.get('algo')      # ddpg, td3 
+        mission = training_config.get('mission')     # hover
         runs_base = training_config.get('runs_base')
 
 
@@ -199,7 +214,7 @@ def main():
             pass
 
         # Train (fresh or resume)
-        model = train_td3_agent(venv, config, run_dirs, checkpoint=checkpoint)
+        model = train_agent(venv, config, run_dirs, checkpoint=checkpoint)
 
         venv.save(vecnorm_path)
 

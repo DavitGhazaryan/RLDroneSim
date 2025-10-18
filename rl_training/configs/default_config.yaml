@@ -21,7 +21,6 @@ training_config:
   runs_base: "/home/pid_rl/rl_training/runs"            # Base directory for all runs
   algo: "ddpg"    # "ddpg", "td3"
   mission: "hover"                                
-  model_name_prefix: "ddpg_ardupilot"      # "ddpg_ardupilot", "td3_ardupilot"  
   log_interval: 1000      
   progress_bar: true                       
   reset_num_timesteps: false               
@@ -86,7 +85,6 @@ td3_params:
 callbacks:
   - type: "checkpoint"                         # Checkpoint callback type
     save_freq: 1000                            # Save frequency for checkpoints
-    name_prefix: "ddpg_ardupilot"      
   - type: "tensorboard"                         # Checkpoint callback type
 
 reward_config:

@@ -215,7 +215,7 @@ def create_run_dir(base_dir: str, algo: str, mission: str,
                    resume_from: str | None = None) -> dict:
     """
     Create or REUSE a structured run directory tree:
-      runs/<algo>/<mission>/<YYYYMMDD_HHMMSS>_{exp_name}/ with subdirs tb/ and models/
+      runs/<mission>/<algo>/<YYYYMMDD_HHMMSS>_{exp_name}/ with subdirs tb/ and models/
 
     If `resume_from` is provided (can be a run folder, tb/, models/, a .zip, .pkl,
     or a TensorBoard event file), we *reuse* that run (no new timestamp).
@@ -242,7 +242,7 @@ def create_run_dir(base_dir: str, algo: str, mission: str,
     # fresh run
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = f"_{exp_name}" if exp_name else ""
-    run_dir = os.path.join(base_dir, algo, mission, f"{stamp}{suffix}")
+    run_dir = os.path.join(base_dir, mission, algo, f"{stamp}{suffix}")
     tb_dir = os.path.join(run_dir, "tb")
     models_dir = os.path.join(run_dir, "models")
     _safe_mkdir(tb_dir, mode=0o777)
@@ -329,12 +329,11 @@ def create_action_noise_from_config(action_noise_config, action_dim):
             sigma=0.1 * np.ones(action_dim)
         )
 
-def _latest_ckpt_path(path_like: str, name_prefix: str):
+def _latest_ckpt_path(path_like: str):
     """
     Accepts a directory or a specific .zip path.
     Returns (model_zip_path, steps_int) or (None, None) if not found.
     """
-    print(path_like, name_prefix)
     if path_like is None:
         return None, None
     if os.path.isfile(path_like) and path_like.endswith(".zip"):
