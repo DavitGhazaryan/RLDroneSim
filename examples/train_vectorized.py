@@ -10,8 +10,9 @@ from stable_baselines3.common.monitor import Monitor                    # type: 
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize  # type: ignore
 
 from rl_training.utils.tb_callback import TensorboardCallback
-from rl_training.utils.utils import create_run_dir, save_config_copy, save_git_info, create_action_noise_from_config, _latest_ckpt_path, _replay_for
+from rl_training.utils.utils import create_run_dir, save_config_copy, save_git_info, create_action_noise_from_config, _extract_steps, _replay_for, _get_config, _vecnormalize_for
 import os
+import re 
 
 
 
@@ -31,32 +32,40 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
     tensorboard_log = run_dirs['tb_dir'] 
     
     total_timesteps = training_config.get('total_timesteps')
-    print(f"\n🚀 Starting {algo} training for {total_timesteps} timesteps...")
+    if checkpoint:
+        print(f"\n🚀 Resuming {algo} training for {total_timesteps} timesteps...")
+    else:
+        print(f"\n🚀 Starting {algo} training for {total_timesteps} timesteps...")
 
     action_dim = env.action_space.shape[0]
     action_noise = create_action_noise_from_config(algo_config.get('action_noise'), action_dim)
 
     tb_run_name = "run"
     if checkpoint:
-        raise NotImplementedError()
-        model_zip, steps = _latest_ckpt_path(checkpoint)
+        steps = _extract_steps(checkpoint)
+        print("here")
         existing = [d for d in os.listdir(tensorboard_log)
                 if d.startswith(tb_run_name) and os.path.isdir(os.path.join(tensorboard_log, d))]
         run_idx = len(existing)
         tb_run_name = f"{tb_run_name}_{run_idx}"
     else:
-        model_zip, steps = (None, None)
+        steps = None
 
     def linear_schedule(progress_remaining):
         return algo_config.get('learning_rate') * progress_remaining
 
-    if model_zip:
-        print(f"📦 Resuming from checkpoint: {model_zip}")
-        raise NotImplementedError("REsuming is not implemented yet")
-        model = TD3.load(model_zip, env=env, device=algo_config.get('device'))
+    if checkpoint:
+        print(f"📦 Resuming from checkpoint: {checkpoint}")
+        if algo == 'td3':
+            from stable_baselines3 import TD3   # type: ignore
+            model = TD3.load(checkpoint, env=env, device=algo_config.get('device'))
+        elif algo == 'ddpg':
+            from stable_baselines3.ddpg import DDPG   # type: ignore
+            model = DDPG.load(checkpoint, env=env, device=algo_config.get('device'))
+
         model.action_noise = action_noise
 
-        rb_path = _replay_for(model_zip, steps, algo)
+        rb_path = _replay_for(checkpoint)
         if rb_path:
             print(f"🔄 Loading replay buffer: {rb_path}")
             model.load_replay_buffer(rb_path)
@@ -139,7 +148,7 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
 
 
     reset_flag = training_config.get('reset_num_timesteps')
-    if not reset_flag and model_zip:
+    if not reset_flag and checkpoint:
         reset_flag = False
     print(f"Reset flag {reset_flag}")
     ## Main learning code
@@ -162,6 +171,8 @@ def main():
     parser.add_argument("instance", nargs="?", type=int, default=1)
     parser.add_argument("--checkpoint", type=str, default=None,
                         help="Path to model .zip OR a directory/file inside an existing run to resume.")
+    parser.add_argument("--newconfig", type=bool, default=False,
+                        help="use the new default_config.yaml for training.")
     args = parser.parse_args()
 
     if args.instance not in (1, 2):
@@ -170,17 +181,20 @@ def main():
 
     instance = args.instance
     checkpoint = args.checkpoint
+    new_config = args.newconfig
+    print()
     print(f"Using value: {instance}")
 
-    config_path = '/home/pid_rl/rl_training/configs/default_config.yaml'
+    if not checkpoint or new_config:
+        config_path = '/home/pid_rl/rl_training/configs/default_config.yaml'
+    else:
+        config_path = _get_config(checkpoint)
 
     try:
         config = load_config(config_path)
 
-
-        # === VecEnv + Monitor + (maybe) load VecNormalize stats ===
         def make_env():
-            return Monitor(SimGymEnv(config, instance=instance))
+            return Monitor(SimGymEnv(config, instance=instance))        
         dummy_vec = DummyVecEnv([make_env])
         venv = VecNormalize(dummy_vec, norm_obs=True, norm_reward=False, clip_obs=10.0)
 
@@ -189,12 +203,12 @@ def main():
         mission = training_config.get('mission')     # hover
         runs_base = training_config.get('runs_base')
 
-
         # If resuming: reuse the original run root; else create a fresh stamped run
         if checkpoint:
             run_dirs = create_run_dir(runs_base, algorithm, mission, resume_from=checkpoint)
-            print("↩️  Resuming run:")
-            vecnorm_path = os.path.join(run_dirs['run_dir'], "vecnormalize.pkl")
+            vecnorm_path = _vecnormalize_for(checkpoint)
+            print(f" Loading vecnormalize: {vecnorm_path}")
+
             if os.path.exists(vecnorm_path):
                 venv = VecNormalize.load(vecnorm_path, dummy_vec)
                 venv.training = True

@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 # from email.mime.text import MIMEText
 # import smtplib
-
+import re
 
 ARDUPILOT_DIR = '/home/student/Dev/ardupilot'
 
@@ -328,39 +328,69 @@ def create_action_noise_from_config(action_noise_config, action_dim):
             mean=np.zeros(action_dim),
             sigma=0.1 * np.ones(action_dim)
         )
-
-def _latest_ckpt_path(path_like: str):
+def _extract_steps(path_like: str):
     """
-    Accepts a directory or a specific .zip path.
-    Returns (model_zip_path, steps_int) or (None, None) if not found.
+    Accepts a specific .zip path.
+    Returns integer steps or None if not found.
+    Example: td3_1000_steps.zip -> 1000
     """
-    if path_like is None:
-        return None, None
-    if os.path.isfile(path_like) and path_like.endswith(".zip"):
-        m = re.search(r"_(\d+)_steps\.zip$", os.path.basename(path_like))
-        steps = int(m.group(1)) if m else None
-        return path_like, steps
-    return None, None
+    if not path_like or not os.path.isfile(path_like) or not path_like.endswith(".zip"):
+        return None
+    m = re.search(r"_(\d+)_steps\.zip$", os.path.basename(path_like))
+    return int(m.group(1)) if m else None
 
-def _replay_for(model_zip_path: str, steps: int, name_prefix: str):
+
+def _extract_prefix(path_like: str):
+    """
+    Accepts a specific .zip path.
+    Returns the prefix before the first underscore.
+    Example: td3_1000_steps.zip -> "td3"
+    """
+    if not path_like:
+        return None
+    base = os.path.basename(path_like)
+    m = re.match(r"^([^_]+)_", base)
+    return m.group(1) if m else None
+
+def _replay_for(model_zip_path: str):
     """
     Finds the replay buffer file that matches the given model steps.
     Expects: <dir>/<name_prefix>_replay_buffer_<steps>_steps.pkl
     """
-    if model_zip_path is None or steps is None:
+    steps = _extract_steps(model_zip_path)
+    prefix = _extract_prefix(model_zip_path)
+    if model_zip_path is None or steps is None or prefix is None:
         return None
     directory = os.path.dirname(model_zip_path)
-    rb = os.path.join(directory, f"{name_prefix}_replay_buffer_{steps}_steps.pkl")
+    rb = os.path.join(directory, f"{prefix}_replay_buffer_{steps}_steps.pkl")
+    return rb if os.path.exists(rb) else None
+
+def _vecnormalize_for(model_zip_path: str):
+    """
+    Finds the replay buffer file that matches the given model steps.
+    Expects: <dir>/<name_prefix>_replay_buffer_<steps>_steps.pkl
+    """
+    steps = _extract_steps(model_zip_path)
+    prefix = _extract_prefix(model_zip_path)
+    if model_zip_path is None or steps is None or prefix is None:
+        return None
+    directory = os.path.dirname(model_zip_path)
+    rb = os.path.join(directory, f"{prefix}_vecnormalize_{steps}_steps.pkl")
     return rb if os.path.exists(rb) else None
 
 
-# def notify_email(subject, body):
-#     # set via env vars or your secrets manager
-#     host = os.environ["SMTP_HOST"]; port = int(os.environ.get("SMTP_PORT", "587"))
-#     user = os.environ["SMTP_USER"]; pwd = os.environ["SMTP_PASS"]
-#     to   = os.environ["ALERT_TO"]
-#     msg = MIMEText(body)
-#     msg["Subject"] = subject; msg["From"] = user; msg["To"] = to
-#     with smtplib.SMTP(host, port) as s:
-#         s.starttls(); s.login(user, pwd); s.sendmail(user, [to], msg.as_string())
+def _get_config(path_like: str):
+    """
+    Given a model path like:
+    /home/pid_rl/rl_training/runs/hover/td3/20251018_072859/models/td3_1000_steps.zip
+
+    Returns the corresponding config path:
+    /home/pid_rl/rl_training/runs/hover/td3/20251018_072859/cfg.yaml
+    """
+    if not path_like:
+        return None
+    base_dir = os.path.dirname(path_like)  # .../models
+    parent_dir = os.path.dirname(base_dir) # .../<timestamp>
+    cfg_path = os.path.join(parent_dir, "cfg.yaml")
+    return cfg_path
 
