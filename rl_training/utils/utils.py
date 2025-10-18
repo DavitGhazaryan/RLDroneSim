@@ -84,7 +84,7 @@ def demonstrate_observation_action_format(env):
     for key, idx in action_mapping.items():
         print(f"   action[{idx}] = {key} adjustment = {sample_action[idx]:.3f}")
 
-def evaluate_agent(model, env, num_episodes):
+def evaluate_agent(model, env, num_episodes, gamma=0.99):
     """
     Evaluate the trained agent.
     
@@ -97,18 +97,19 @@ def evaluate_agent(model, env, num_episodes):
         Evaluation results
     """
 
-    print(f"\n🧪 Evaluating agent over {num_episodes} episodes...")
+    # print(f"\n🧪 Evaluating agent over {num_episodes} episodes...")
     
     episode_rewards = []
     episode_lengths = []
     
     for episode in range(num_episodes):
-        obs, info = env.reset()
-        episode_reward = 0.0
+        # obs, info = env.reset()
+        obs = env.reset()
+        episode_return = 0.0
         episode_discounted_return = 0.0
         episode_length = 0
-        
-        print(f"   Episode {episode + 1}: ", end="")
+        print()
+        print(f"Episode {episode + 1}:")
         
         while True:
             if model:
@@ -116,21 +117,23 @@ def evaluate_agent(model, env, num_episodes):
             else:
                 action = env.action_space.sample()  
                 action = action * 0
+                action = [action]
 
             # Take step in environment
-            obs, reward, terminated, truncated, info = env.step(action)
+            obs, reward, done, info = env.step(action)
+
+            episode_length += 1            
+            episode_return += reward
+            episode_discounted_return += (gamma ** episode_length) * reward
             
-            episode_reward += reward
-            
-            episode_length += 1
-            
-            if terminated or truncated:
+            if done and info[0]['reason']:
+                print(f"    {info[0]['reason']}")
                 break
         
-        episode_rewards.append(episode_reward)
+        episode_rewards.append(episode_return)
         episode_lengths.append(episode_length)
         
-        print(f"Reward: {episode_reward:.2f}, Length: {episode_length}")
+        print(f"    Reward: {float(episode_return):.2f}, Discounted  {float(episode_discounted_return):.2f}, Length: {int(episode_length)}")
     
     # Calculate statistics
     avg_reward = np.mean(episode_rewards)
@@ -141,14 +144,6 @@ def evaluate_agent(model, env, num_episodes):
     print(f"   Average reward: {avg_reward:.2f} ± {std_reward:.2f}")
     print(f"   Average episode length: {avg_length:.1f} steps")
     print(f"   Success rate: {sum(1 for r in episode_rewards if r > 0) / len(episode_rewards):.1%}")
-    
-    # return {
-    #     'episode_rewards': episode_rewards,
-    #     'episode_lengths': episode_lengths,
-    #     'avg_reward': avg_reward,
-    #     'std_reward': std_reward,
-    #     'avg_length': avg_length
-    # }
 
 
 import datetime

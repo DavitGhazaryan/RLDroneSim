@@ -72,8 +72,8 @@ class ArduPilotSITL(Drone):
         self.gazebo.resume_simulation()
 
         self.start_sitl()
+        time.sleep(25/self.speedup)
         self.arm_drone()
-        time.sleep(5)
 
     def reset(self, pose, attitude):
         self.gazebo.pause_simulation()
@@ -197,7 +197,6 @@ class ArduPilotSITL(Drone):
         if self.instance == 2:
             self.master_port += 10
 
-        print(cmd)
         return cmd
 
     def _wait_for_startup(self):

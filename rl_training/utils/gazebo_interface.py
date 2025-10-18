@@ -31,8 +31,8 @@ class GazeboInterface:
             os.environ["GZ_PARTITION"] = "gz_i1"
             if self._sdf_file.endswith('.sdf'):
                 self._sdf_file = self._sdf_file[:-4] + '_2.sdf'
-        else:
-            os.environ["GZ_PARTITION"] = "gz_i0"
+        # else:
+        #     os.environ["GZ_PARTITION"] = "gz_i0"
 
         if self._sdf_file and not os.path.exists(self._sdf_file):
             raise FileNotFoundError(f"SDF file not found: {self._sdf_file}")

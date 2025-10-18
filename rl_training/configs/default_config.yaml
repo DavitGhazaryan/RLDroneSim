@@ -17,12 +17,12 @@ environment_config:
   verbose: false                  # controls custom logging not internal
 
 training_config:
-  total_timesteps: 1000000                        # Total training timesteps
+  total_timesteps: 2000000                        # Total training timesteps
   runs_base: "/home/pid_rl/rl_training/runs"            # Base directory for all runs
   algo: "ddpg"    # "ddpg", "td3"
   mission: "hover"                                
   model_name_prefix: "ddpg_ardupilot"      # "ddpg_ardupilot", "td3_ardupilot"  
-  log_interval: 100      
+  log_interval: 1000      
   progress_bar: true                       
   reset_num_timesteps: false               
 
@@ -54,9 +54,9 @@ ddpg_params:
 
 
 td3_params:
-  learning_rate: 0.001                          # Learning rate for actor and critic networks
-  buffer_size: 1000000                          # Size of replay buffer
-  learning_starts: 5000                         # Steps before learning begins
+  learning_rate: 0.0015                          # Learning rate for actor and critic networks
+  buffer_size: 100000                          # Size of replay buffer
+  learning_starts: 10000                         # Steps before learning begins
   batch_size: 1024                              # Batch size for training
   tau: 0.005                                    # Soft update coefficient for target networks
   gamma: 0.99                                   # Discount factor for future rewards
@@ -72,12 +72,12 @@ td3_params:
       pi: [256, 256]  # Actor (policy) network architecture
       qf: [256, 256]  # Critic (value) network architecture
     share_features_extractor:
-      true
+      false
   target_policy_noise: 0.2
   target_noise_clip: 0.5                        # Clip range for target noise
   policy_delay: 3                               # Number of updates before updating actor
   n_steps: -1                                   # Steps per update (default -1)
-  stats_window_size: 100                        # Size of the statistics window for updates
+  stats_window_size: 200                        # Size of the statistics window for updates
   device: "cuda"                                # Device for training (auto, cpu, cuda)
   _init_setup_model: true                       # For TD3 specific initialization
 
