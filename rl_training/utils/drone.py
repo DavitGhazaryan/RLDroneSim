@@ -54,7 +54,6 @@ class Drone:
 
         self._mavlink_master.mav.param_set_send(self._mavlink_master.target_system, self._mavlink_master.target_component,
                                 name_bytes, float(value), ptype)
-
         t0 = time.time()
         while time.time() - t0 < timeout:
             msg = self._mavlink_master.recv_match(type="PARAM_VALUE", blocking=True, timeout=timeout)

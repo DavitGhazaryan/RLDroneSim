@@ -7,7 +7,7 @@
 # =============================================================================
 
 environment_config:
-  max_episode_steps: 100
+  max_episode_steps: 10
   mode: "altitude"               # Flight mode: position, attitude, stabilize, altitude
   observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"  # Which PID gains to observe
   observable_states: "alt_err+vZ_err+accZ_err" # Which states to observe
@@ -98,8 +98,8 @@ reward_config:
     accE_w: 1                      # Weight for East acceleration err
     accZ_w: 1                      # Weight for Down acceleration err
     acc_yaw_w: 1                   # Weight for yaw acceleration err
-    stable_time_coef: 10
-    success_reward: 2000
+    stable_time_coef: 0
+    success_reward: 0
     crash_penalty_att:  -20                      # Penalty for crashes
     crash_penalty_vel:  -20                      # Penalty for crashes
     crash_penalty_flip: -20                     # Penalty for crashes

@@ -30,24 +30,29 @@ local function target_from_offsets(n_m, e_m, agl_m)
   return L
 end
 
+local function reset_controller_state()
+    gcs:send_text(0, "Entered")
+    poscontrol:reset_controller()
+
+end
+
 local function do_reset(n_m, e_m, agl_m)
   local tgt = target_from_offsets(n_m, e_m, agl_m)
   if not tgt then gcs:send_text(0, "reset: no origin/invalid inputs"); return end
 
   if ahrs.reset then ahrs:reset() end
-
+  gcs:send_text(0, "Here do reset")
+  reset_controller_state()
+  
   local q = Quaternion()
-  -- keep current yaw, zero roll/pitch (or set 0,0,0 if you prefer)
-  local yaw = ahrs:get_yaw() or 0    -- radians
+  local yaw = ahrs:get_yaw_rad() or 0    -- radians
   q:from_euler(0, 0, yaw)
-
-  -- gcs:send_text(0, string.format("pose lat=%.7f lon=%.7f alt_m=%.2f",
-    -- tgt:lat()/1e7, tgt:lng()/1e7, tgt:alt()/100.0))
 
   sim:set_pose(0, tgt, q, ZERO, ZERO)
 end
 
 function update()
+  gcs:send_text(0, "Here")
   local msg, chan = mavlink:receive_chan()
   if msg then
     local parsed = mavlink_msgs.decode(msg, { [COMMAND_LONG_ID]="COMMAND_LONG" })

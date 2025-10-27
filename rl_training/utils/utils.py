@@ -84,7 +84,7 @@ def demonstrate_observation_action_format(env):
     for key, idx in action_mapping.items():
         print(f"   action[{idx}] = {key} adjustment = {sample_action[idx]:.3f}")
 
-def evaluate_agent(model, env, num_episodes, gamma=0.99):
+def evaluate_agent(model, env, num_episodes, gamma=0.99, verbose=False):
     """
     Evaluate the trained agent.
     
@@ -98,30 +98,28 @@ def evaluate_agent(model, env, num_episodes, gamma=0.99):
     """
 
     # print(f"\n🧪 Evaluating agent over {num_episodes} episodes...")
-    
     episode_rewards = []
     episode_lengths = []
     
+    obs = env.reset()
     for episode in range(num_episodes):
-        # obs, info = env.reset()
-        obs = env.reset()
         episode_return = 0.0
         episode_discounted_return = 0.0
         episode_length = 0
         print()
         print(f"Episode {episode + 1}:")
-        
         while True:
             if model:
-                action, _ = model.predict(obs, deterministic=True)  
+                action, _ = model.predict(obs, deterministic=True)
             else:
                 action = env.action_space.sample()  
                 action = action * 0
                 action = [action]
-
+            print(f"Action {episode_length} : {action}")
             # Take step in environment
             obs, reward, done, info = env.step(action)
-
+            
+            # print(episode_length, reward)
             episode_length += 1            
             episode_return += reward
             episode_discounted_return += (gamma ** episode_length) * reward
@@ -132,9 +130,13 @@ def evaluate_agent(model, env, num_episodes, gamma=0.99):
         
         episode_rewards.append(episode_return)
         episode_lengths.append(episode_length)
-        
-        print(f"    Reward: {float(episode_return):.2f}, Discounted  {float(episode_discounted_return):.2f}, Length: {int(episode_length)}")
-    
+
+        print()
+        print(f"    Return: {float(episode_return):.2f}, Discounted  {float(episode_discounted_return):.2f}, Length: {int(episode_length)}")
+        episode_length = 0
+        episode_return = 0
+        episode_discounted_return = 0
+
     # Calculate statistics
     avg_reward = np.mean(episode_rewards)
     std_reward = np.std(episode_rewards)

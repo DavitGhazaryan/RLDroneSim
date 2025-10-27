@@ -19,7 +19,7 @@ class SimGymEnv(BaseEnv, gym.Env):
     Defines the main API of the Environment. main component is the drone which can be either hardware or Gazebo+SITL.
     """
     
-    def __init__(self, config, instance=1):
+    def __init__(self, config, instance=1, eval_baseline=False):
         BaseEnv.__init__(self, config=config, instance=instance)
         gym.Env.__init__(self)
 
@@ -28,6 +28,7 @@ class SimGymEnv(BaseEnv, gym.Env):
         # Initialize spaces
         self.observation_space = self._define_observation_space()
         self.action_space = self._define_action_space()
+        self.eval_baseline = eval_baseline
 
     def _define_observation_space(self):
         """
@@ -74,7 +75,6 @@ class SimGymEnv(BaseEnv, gym.Env):
     def reset(self, seed=None, options=None):
         """Reset the environment to initial state."""
         gym.Env.reset(self, seed=seed)         
-        # print("RESET ##############")
         start = time.time()
 
         # if hasattr(self.action_space, "seed"):
@@ -94,16 +94,15 @@ class SimGymEnv(BaseEnv, gym.Env):
             self.max_stable_time = 0
 
             self.ep_initial_pose, self.ep_initial_attitude, self.ep_initial_gains = self._get_random_initial_state()
+            print("Reseted pose")
+            print(self.ep_initial_pose)
             self.curr_gains = self.ep_initial_gains.copy()
-
             for gain in self.action_gains:
                 self.drone.set_param_and_confirm(gain, self.ep_initial_gains[gain])
-
             self.drone.reset([self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]], euler_to_quaternion(None))            
                         
         self.drone.wait(self.action_dt)   # no need to normalize the sleep time with speedup
         observation, info = self._get_observation(self.ep_initial_gains)
-        end = time.time()
 
         # print(f" Reset duration {end - start}")
         return observation, info  # observation, info
@@ -128,11 +127,15 @@ class SimGymEnv(BaseEnv, gym.Env):
 
     def _get_random_initial_state(self):
         initial_gains = {}
-        for gain in self.action_gains:
-            initial_gains[gain] = max(self.first_initial_gains[gain] + self.np_random.uniform(-2.0, 2.0), 0)
+        if not self.eval_baseline:
+            for gain in self.action_gains:
+                initial_gains[gain] = max(self.first_initial_gains[gain] + self.np_random.uniform(-2.0, 2.0), 0)
+        else:
+            initial_gains = self.ep_initial_gains.copy()
+        
         return {
             'x_m': self.goal_pose['x_m'],
             'y_m': self.goal_pose['y_m'],    
-            'z_m': max(self.goal_pose['z_m']+ self.np_random.uniform(-2.0, 2.0), 0.3) 
+            'z_m': max(self.goal_pose['z_m']+ self.np_random.uniform(-0.01, 0.01), 1.3) 
         }, self.ep_initial_attitude, initial_gains
     

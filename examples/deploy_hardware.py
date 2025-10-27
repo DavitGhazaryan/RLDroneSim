@@ -3,7 +3,7 @@ import logging
 import sys
 import time
 import os 
-import torch
+import torch # type: ignore
 import yaml
 
 raise NotImplemented("The correct version is on Raspberry...")

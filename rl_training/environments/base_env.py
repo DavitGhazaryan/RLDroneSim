@@ -61,14 +61,13 @@ class BaseEnv:
     
     # overwritten in subclass
     def reset(self, seed=None, options=None):
-        # print("RESET #######")
         
         # start = time.time()
-        # print("Called from here")
         if not self.initialized:
             self.drone = Drone(config['drone_config'], self.verbose) 
             self._initialize_system()
         else:
+            self.episode_step = 0
             self.eps_stable_time = 0
             self.max_stable_time = 0
             
@@ -110,19 +109,18 @@ class BaseEnv:
             terminated = False
             truncated = self.episode_step >= self.max_episode_steps
             if truncated:
-                pass
-
+                info["TimeLimit.truncated"] = True
+                info["terminal_observation"] = observation  # optional, good for some algos
+                reason = 'timeout'
         # Create proper info dictionary
         info = {
             'reason': reason,
             'episode_step': self.episode_step,
         }
-        reward = self._compute_reward(messages, reason)
+        reward = self._compute_reward(messages, reason, truncated)
         # print(reward)
         for i, var in enumerate(self.action_gains):
             info[var] = self.curr_gains[var]
-        # end = time.time()
-        # print(f"Step time {end - start}")
 
         return observation, reward, terminated, truncated, info
 
@@ -178,6 +176,8 @@ class BaseEnv:
             'y_m': messages["LOCAL_POSITION_NED"].x,
             'z_m': - messages["LOCAL_POSITION_NED"].z
         }
+        print("initial pose")
+        print(self.ep_initial_pose)
         attitude = messages["ATTITUDE"]
         self.ep_initial_attitude = {
             'pitch_deg': math.degrees(attitude.pitch),
@@ -203,7 +203,7 @@ class BaseEnv:
     def _check_terminated(self, messages):
         message = messages["LOCAL_POSITION_NED"]
         attitude = messages["ATTITUDE"]
-
+        print(message.y, message.x, -message.z)
         # 1. Attitude Error
         if abs(math.degrees(attitude.pitch) - self.goal_orientation['pitch_deg']) > 15 or abs(math.degrees(attitude.roll) - self.goal_orientation['roll_deg']) > 15:
             return True, Termination.ATTITUDE_ERR
@@ -214,20 +214,24 @@ class BaseEnv:
         
         # 2. Flip (pitch or roll > 90 deg)
         if abs(math.degrees(attitude.pitch)) > 90 or abs(math.degrees(attitude.roll)) > 90:
-            return True, Termination.FLIP
+            return True, Termination.FLIPgm
         
-        # 3. 2x farther xy from goal than originally
-        dist_xy_init = np.linalg.norm(np.array([self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]]) 
-                                   - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
-        dist_xy_now = np.linalg.norm(np.array([message.y, message.x, -message.z]) 
-                                  - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
+        # # 3. 2x farther xy from goal than originally
+        # dist_xy_init = np.linalg.norm(np.array([self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]]) 
+        #                            - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
+        # dist_xy_now = np.linalg.norm(np.array([message.y, message.x, -message.z]) 
+        #                           - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
        
-        # 4. 2x farther altitude from goal than originally
-        alt_init = abs(self.ep_initial_pose["z_m"] - self.goal_pose["z_m"])
-        alt_now = abs(-message.z - self.goal_pose["z_m"])
+        # # 4. 2x farther altitude from goal than originally
+        # alt_init = abs(self.ep_initial_pose["z_m"] - self.goal_pose["z_m"])
+        # alt_now = abs(-message.z - self.goal_pose["z_m"])
        
-        if (dist_xy_now > 1.5 * dist_xy_init and dist_xy_now > 0.1) or (alt_now > alt_init * 3  and alt_now > 0.1):
-            return True, Termination.FAR
+        # if (dist_xy_now > 1.5 * dist_xy_init and dist_xy_now > 0.1) or (alt_now > alt_init * 3  and alt_now > 0.1):
+        #     print(f"dist_xy_now {dist_xy_now}")
+        #     print(f"dist_xy_init {dist_xy_init}")
+        #     print(f"alt_now  {alt_now }")
+        #     print(f"alt_init  {alt_init }")
+        #     return True, Termination.FAR
 
 
         # 5. goal is reached - check both position and altitude
@@ -246,7 +250,7 @@ class BaseEnv:
             self.eps_stable_time = 0
         return False, None 
 
-    def _compute_reward(self, messages, reason):
+    def _compute_reward(self, messages, reason, truncated):
         """
         Compute reward based on stable-time mechanism.
         
@@ -304,9 +308,9 @@ class BaseEnv:
                         r = self.reward_coefs.get("crash_penalty_far")
                     
             #  Timeout reward and has not crashed
-            if self.episode_step >= self.max_episode_steps and r > 0:  
+            if truncated:  
                 r += self.reward_coefs.get("success_reward")
-
+                
                 kappa = self.reward_coefs.get("stable_time_coef")
                 r += kappa * self.max_stable_time
             

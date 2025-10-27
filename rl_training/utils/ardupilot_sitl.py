@@ -64,8 +64,6 @@ class ArduPilotSITL(Drone):
 
         self.process= None
         self.gazebo = GazeboInterface(gazebo_config, instance, verbose)
-        self._default_params = self._load_default_params()
-        self._validate_paths()
 
     def start(self):
         self.gazebo.start_simulation()   # waiting is done internally.
@@ -88,9 +86,9 @@ class ArduPilotSITL(Drone):
         if self.is_running():
             raise RuntimeError("SITL already running")
         cmd = self._build_command()
-
+        print(cmd)
         self.process = subprocess.Popen(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=False,
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=False,
             cwd=str(self.ardupilot_path),
         )
         self._wait_for_startup()      # ensures that the process is running and the port(s) are available
@@ -129,44 +127,6 @@ class ArduPilotSITL(Drone):
                 return int(msg.result)  # 0 = ACCEPTED
         return False
 
-    # utils for the SITL
-    def _validate_paths(self):
-        if not self.ardupilot_path.exists():
-            raise FileNotFoundError(f"ArduPilot path not found: {self.ardupilot_path}")
-        if not self.sim_vehicle_script.exists():
-            raise FileNotFoundError(f"sim_vehicle.py not found: {self.sim_vehicle_script}")
-        #logger.debug(f"Using sim_vehicle.py: {self.sim_vehicle_script}")
-
-    def _load_default_params(self) -> Dict[str, float]:
-        # Map vehicle types to their parameter file names
-        vehicle_param_map = {
-            'ArduCopter': 'copter.parm',
-        }
-        
-        # Use frame-specific params if available, otherwise fall back to vehicle default
-        frame_param_map = {
-            'gazebo-iris': 'gazebo-iris.parm',
-            'gazebo-zephyr': 'gazebo-zephyr.parm'
-        }
-        
-        # Choose parameter file: frame-specific > vehicle-specific > copter default
-        param_file = frame_param_map.get(self.frame) or vehicle_param_map.get(self.vehicle, 'copter.parm')
-        path = self.ardupilot_path / "Tools" / "autotest" / "default_params" / param_file
-        defaults: Dict[str, float] = {}
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                parts = line.split()
-                if len(parts) >= 2:
-                    try:
-                        defaults[parts[0]] = float(parts[1])
-                    except ValueError:
-                        pass
-        #logger.debug(f"Loaded {len(defaults)} default params from {path}")
-        return defaults
-
     def _build_command(self) -> List[str]:
 
         cmd = [
@@ -196,7 +156,6 @@ class ArduPilotSITL(Drone):
 
         if self.instance == 2:
             self.master_port += 10
-
         return cmd
 
     def _wait_for_startup(self):

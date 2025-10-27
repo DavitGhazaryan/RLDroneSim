@@ -68,4 +68,25 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 log "Compiling with make -j${JOBS}..."
 make -j "${JOBS}"
 
+# Add Gazebo Transport environment variables to ~/.bashrc if not already present
+BASHRC="$HOME/.bashrc"
+
+# Function to add or update variable
+add_or_update_var() {
+    VAR_NAME=$1
+    VAR_VALUE=$2
+    if grep -q "^export $VAR_NAME=" "$BASHRC"; then
+        sed -i "s|^export $VAR_NAME=.*|export $VAR_NAME=$VAR_VALUE|" "$BASHRC"
+    else
+        echo "export $VAR_NAME=$VAR_VALUE" >> "$BASHRC"
+    fi
+}
+
+add_or_update_var GZ_IP 127.0.0.1
+add_or_update_var GZ_PARTITION my_partition
+add_or_update_var GZ_TRANSPORT_TOPIC_STATISTICS 0
+add_or_update_var GZ_VERBOSE 0
+
+echo "Gazebo environment variables added to ~/.bashrc"
+
 log "All done ✔"

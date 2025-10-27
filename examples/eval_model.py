@@ -10,17 +10,17 @@ from stable_baselines3.common.monitor import Monitor # pyright: ignore[reportMis
 
 def main():
     algo = "baseline"   # baseline, td3, ddpg
-    training_number = '20251013_193506'
+    training_number = '20251015_033902'
     checkpoint_step = "995000"
     
     # modify params
     gui = True
-    speedup = 10
+    speedup = 2
 
     if algo != "baseline":
-        config_path = f'/home/pid_rl/rl_training/runs/ddpg/hover/{training_number}/cfg.yaml'
-        model_zip = f"/home/pid_rl/rl_training/runs/ddpg/hover/{training_number}/models/{algo}_ardupilot_{checkpoint_step}_steps.zip"
-        vecnorm_path = f"/home/pid_rl/rl_training/runs/ddpg/hover/{training_number}/models/{algo}_ardupilot_vecnormalize_{checkpoint_step}_steps.pkl"
+        config_path = f'/home/pid_rl/rl_training/runs/hover/{algo}/{training_number}/cfg.yaml'
+        model_zip = f"/home/pid_rl/rl_training/runs/hover/{algo}/{training_number}/models/{algo}_ardupilot_{checkpoint_step}_steps.zip"
+        vecnorm_path = f"/home/pid_rl/rl_training/runs/hover/{algo}/{training_number}/models/{algo}_ardupilot_vecnormalize_{checkpoint_step}_steps.pkl"
     else:
         config_path = f'/home/pid_rl/rl_training/configs/default_config.yaml'
         model_zip = None
@@ -34,7 +34,7 @@ def main():
 
     # create and wrap environment
     def make_env():
-        env = SimGymEnv(config)
+        env = SimGymEnv(config, eval_baseline=algo=="baseline")
         return Monitor(env)
     env = DummyVecEnv([make_env])
 
@@ -55,7 +55,7 @@ def main():
     elif algo == "baseline":
         model = None
         gamma  = 0.99
-    n_eval = 5
+    n_eval = 20
 
     header = f" Evaluating : {algo}"
     if model:
@@ -63,7 +63,7 @@ def main():
     
     print(header)
 
-    results = evaluate_agent(model, env, n_eval, gamma=gamma)
+    results = evaluate_agent(model, env, n_eval, gamma=gamma, verbose=True)
 
 if __name__ == "__main__":
     main()
