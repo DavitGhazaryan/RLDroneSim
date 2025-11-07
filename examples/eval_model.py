@@ -9,18 +9,18 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize # pyright
 from stable_baselines3.common.monitor import Monitor # pyright: ignore[reportMissingImports]
 
 def main():
-    algo = "baseline"   # baseline, td3, ddpg
-    training_number = '20251015_033902'
+    algo = "td3"   # baseline, td3, ddpg
+    training_number = '20251104_171135'
     checkpoint_step = "995000"
     
     # modify params
     gui = True
-    speedup = 2
+    speedup = 1
 
     if algo != "baseline":
         config_path = f'/home/pid_rl/rl_training/runs/hover/{algo}/{training_number}/cfg.yaml'
-        model_zip = f"/home/pid_rl/rl_training/runs/hover/{algo}/{training_number}/models/{algo}_ardupilot_{checkpoint_step}_steps.zip"
-        vecnorm_path = f"/home/pid_rl/rl_training/runs/hover/{algo}/{training_number}/models/{algo}_ardupilot_vecnormalize_{checkpoint_step}_steps.pkl"
+        model_zip = f"/home/pid_rl/rl_training/runs/hover/{algo}/{training_number}/models/{algo}_{checkpoint_step}_steps.zip"
+        vecnorm_path = f"/home/pid_rl/rl_training/runs/hover/{algo}/{training_number}/models/{algo}_vecnormalize_{checkpoint_step}_steps.pkl"
     else:
         config_path = f'/home/pid_rl/rl_training/configs/default_config.yaml'
         model_zip = None
@@ -55,7 +55,7 @@ def main():
     elif algo == "baseline":
         model = None
         gamma  = 0.99
-    n_eval = 20
+    n_eval = 50
 
     header = f" Evaluating : {algo}"
     if model:

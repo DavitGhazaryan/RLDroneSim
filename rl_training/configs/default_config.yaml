@@ -7,49 +7,51 @@
 # =============================================================================
 
 environment_config:
-  max_episode_steps: 10
+  max_episode_steps: 100
   mode: "altitude"               # Flight mode: position, attitude, stabilize, altitude
-  observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"  # Which PID gains to observe
+  observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_ACCZ_P"  # Which PID gains to observe
+  # observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"  # Which PID gains to observe
   observable_states: "alt_err+vZ_err+accZ_err" # Which states to observe
-  action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"      # Which PID gains to adjust
+  action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_ACCZ_P"      # Which PID gains to adjust
+  # action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"      # Which PID gains to adjust
   action_dt: 0.05                 # Time interval between action and observation
   takeoff_altitude: 5.0          #  meters
   verbose: false                  # controls custom logging not internal
 
 training_config:
-  total_timesteps: 2000000                        # Total training timesteps
+  total_timesteps: 1000000                        # Total training timesteps
   runs_base: "/home/pid_rl/rl_training/runs"            # Base directory for all runs
-  algo: "ddpg"    # "ddpg", "td3"
+  algo: "td3"    # "ddpg", "td3"
   mission: "hover"                                
-  log_interval: 1000      
+  log_interval: 5                            # episodes before dump 
   progress_bar: true                       
   reset_num_timesteps: false               
 
 
-ddpg_params:
-  learning_rate: 0.001                          # Learning rate for actor and critic networks
-  buffer_size: 100000                           # Size of replay buffer
-  learning_starts: 5000                         # Steps before learning begins
-  batch_size: 1024                              # Batch size for training
-  tau: 0.005                                    # Soft update coefficient for target networks
-  gamma: 0.99                                   # Discount factor for future rewards
-  train_freq: 1                                 # Training frequency (every N steps)
-  gradient_steps: 5                             # Gradient steps per training update
-  action_noise:                                 # Action noise for exploration
-    type: "NormalActionNoise"                   # Noise type: NormalActionNoise
-    mean: 0.0                                   # Mean of noise distribution
-    sigma: 0.1                                  # Standard deviation of noise
-  optimize_memory_usage: false                  # Whether to optimize memory usage
-  n_steps: -1                                   # Steps per update (default -1)
-  verbose: 1                                    # Verbosity level
-  policy_kwargs:
-    net_arch: 
-      pi: [256, 256]  # Actor (policy) network architecture
-      qf: [256, 256]  # Critic (value) network architecture
-  seed: null                                     # Random seed (optional)
-  device: "cuda"                                # Device for training (auto, cpu, cuda)
-  _init_setup_model: true                       # For DDPG specific initialization
-  tensorboard_log: "/path/to/tensorboard/log"   # Path for TensorBoard logging
+# ddpg_params:
+#   learning_rate: 0.001                          # Learning rate for actor and critic networks
+#   buffer_size: 100000                           # Size of replay buffer
+#   learning_starts: 5000                         # Steps before learning begins
+#   batch_size: 1024                              # Batch size for training
+#   tau: 0.005                                    # Soft update coefficient for target networks
+#   gamma: 0.99                                   # Discount factor for future rewards
+#   train_freq: 1                                 # Training frequency (every N steps)
+#   gradient_steps: 5                             # Gradient steps per training update
+#   action_noise:                                 # Action noise for exploration
+#     type: "NormalActionNoise"                   # Noise type: NormalActionNoise
+#     mean: 0.0                                   # Mean of noise distribution
+#     sigma: 0.1                                  # Standard deviation of noise
+#   optimize_memory_usage: false                  # Whether to optimize memory usage
+#   n_steps: -1                                   # Steps per update (default -1)
+#   verbose: 1                                    # Verbosity level
+#   policy_kwargs:
+#     net_arch: 
+#       pi: [256, 256]  # Actor (policy) network architecture
+#       qf: [256, 256]  # Critic (value) network architecture
+#   seed: null                                     # Random seed (optional)
+#   device: "cuda"                                # Device for training (auto, cpu, cuda)
+#   _init_setup_model: true                       # For DDPG specific initialization
+#   tensorboard_log: "/path/to/tensorboard/log"   # Path for TensorBoard logging
 
 
 td3_params:
@@ -91,12 +93,12 @@ reward_config:
   altitude:                        # Mode
     alt_w: 1                       # Weight for altitude error
     xy_w: 1                        # Weight for XY position error
-    velN_w: 1                      # Weight for North velocity err
-    velE_w: 1                      # Weight for East velocity err
-    velZ_w: 1                      # Weight for Down velocity err
-    accN_w: 1                      # Weight for North acceleration err
-    accE_w: 1                      # Weight for East acceleration err
-    accZ_w: 1                      # Weight for Down acceleration err
+    velN_w: 0                      # Weight for North velocity err
+    velE_w: 0                      # Weight for East velocity err
+    velZ_w: 0                      # Weight for Down velocity err
+    accN_w: 0                      # Weight for North acceleration err
+    accE_w: 0                      # Weight for East acceleration err
+    accZ_w: 0                      # Weight for Down acceleration err
     acc_yaw_w: 1                   # Weight for yaw acceleration err
     stable_time_coef: 0
     success_reward: 0

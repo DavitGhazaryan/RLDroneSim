@@ -115,7 +115,6 @@ def evaluate_agent(model, env, num_episodes, gamma=0.99, verbose=False):
                 action = env.action_space.sample()  
                 action = action * 0
                 action = [action]
-            print(f"Action {episode_length} : {action}")
             # Take step in environment
             obs, reward, done, info = env.step(action)
             

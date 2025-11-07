@@ -9,6 +9,7 @@ from gz.transport13 import Node
 from gz.msgs10.world_control_pb2 import WorldControl
 from gz.msgs10.boolean_pb2 import Boolean
 from gz.msgs10.pose_pb2 import Pose
+# from gz.msgs10.pose_v_pb2 import Pose_V
 from gz.msgs10.empty_pb2 import Empty
 from gz.msgs10.double_pb2 import Double
 

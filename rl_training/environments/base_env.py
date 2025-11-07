@@ -203,35 +203,40 @@ class BaseEnv:
     def _check_terminated(self, messages):
         message = messages["LOCAL_POSITION_NED"]
         attitude = messages["ATTITUDE"]
-        print(message.y, message.x, -message.z)
+        # print(message.y, message.x, -message.z)
+        # print(attitude)
         # 1. Attitude Error
         if abs(math.degrees(attitude.pitch) - self.goal_orientation['pitch_deg']) > 15 or abs(math.degrees(attitude.roll) - self.goal_orientation['roll_deg']) > 15:
+            # print(abs(math.degrees(attitude.pitch) - self.goal_orientation['pitch_deg']), "pitch deg")
+            # print(abs(math.degrees(attitude.roll) - self.goal_orientation['roll_deg']), "roll deg")
             return True, Termination.ATTITUDE_ERR
         
         # Velocity magnitude
         if abs(message.vx) > 4 or abs(message.vy) > 4 or abs(message.vz) > 4:
+            # print(abs(message.vx), abs(message.vy), abs(message.vz))
             return True, Termination.VEL_EXC
         
         # 2. Flip (pitch or roll > 90 deg)
         if abs(math.degrees(attitude.pitch)) > 90 or abs(math.degrees(attitude.roll)) > 90:
+            # print(abs(math.degrees(attitude.pitch)), abs(math.degrees(attitude.roll)))
             return True, Termination.FLIPgm
         
-        # # 3. 2x farther xy from goal than originally
-        # dist_xy_init = np.linalg.norm(np.array([self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]]) 
-        #                            - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
-        # dist_xy_now = np.linalg.norm(np.array([message.y, message.x, -message.z]) 
-        #                           - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
+        # 3. 2x farther xy from goal than originally
+        dist_xy_init = np.linalg.norm(np.array([self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]]) 
+                                   - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
+        dist_xy_now = np.linalg.norm(np.array([message.y, message.x, -message.z]) 
+                                  - np.array([self.goal_pose["x_m"], self.goal_pose["y_m"], self.goal_pose["z_m"]]))
        
-        # # 4. 2x farther altitude from goal than originally
-        # alt_init = abs(self.ep_initial_pose["z_m"] - self.goal_pose["z_m"])
-        # alt_now = abs(-message.z - self.goal_pose["z_m"])
+        # 4. 2x farther altitude from goal than originally
+        alt_init = abs(self.ep_initial_pose["z_m"] - self.goal_pose["z_m"])
+        alt_now = abs(-message.z - self.goal_pose["z_m"])
        
-        # if (dist_xy_now > 1.5 * dist_xy_init and dist_xy_now > 0.1) or (alt_now > alt_init * 3  and alt_now > 0.1):
-        #     print(f"dist_xy_now {dist_xy_now}")
-        #     print(f"dist_xy_init {dist_xy_init}")
-        #     print(f"alt_now  {alt_now }")
-        #     print(f"alt_init  {alt_init }")
-        #     return True, Termination.FAR
+        if (dist_xy_now > 3.0 * dist_xy_init and dist_xy_now > 0.1) or (alt_now > alt_init * 3.0  and alt_now > 0.1):
+            # print(f"dist_xy_now {dist_xy_now}")
+            # print(f"dist_xy_init {dist_xy_init}")
+            # print(f"alt_now  {alt_now }")
+            # print(f"alt_init  {alt_init }")
+            return True, Termination.FAR
 
 
         # 5. goal is reached - check both position and altitude

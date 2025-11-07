@@ -1,0 +1,96 @@
+<?xml version="1.0" ?>
+<sdf version="1.10">
+  <world name="simple_world">
+
+    <!-- Physics engine -->
+    <physics name="1ms" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>-1.0</real_time_factor>
+    </physics>
+
+    <!-- Core Gazebo Systems -->
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-navsat-system" name="gz::sim::systems::NavSat"/>
+
+    <!-- Turn off for efficiency -->
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/> 
+    
+    <!-- Geographic coordinates -->
+    <spherical_coordinates>
+      <latitude_deg>-35.363262</latitude_deg>
+      <longitude_deg>149.165237</longitude_deg>
+      <elevation>584</elevation>
+      <heading_deg>0</heading_deg>
+      <surface_model>EARTH_WGS84</surface_model>
+    </spherical_coordinates>
+
+    <!-- Ground plane -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+        </collision>
+
+      </link>
+    </model>
+
+
+    <!-- Load drone model -->
+    <include>
+      <uri>model://f450_ardupilot</uri>
+      <pose degrees="true">0 0 0.195 0 0 90</pose>
+    </include>
+
+    <wind>
+      <linear_velocity>0 25 0</linear_velocity>
+    </wind>
+    <plugin
+      filename="gz-sim-wind-effects-system"
+      name="gz::sim::systems::WindEffects">
+      <force_approximation_scaling_factor>1</force_approximation_scaling_factor>
+      <horizontal>
+        <magnitude>
+          <time_for_rise>3</time_for_rise>
+          <sin>
+            <amplitude_percent>0.5</amplitude_percent>
+            <period>10</period>
+          </sin>
+          <noise type="gaussian">
+           <mean>0</mean>
+           <stddev>0.002</stddev>
+          </noise>
+        </magnitude>
+        <direction>
+          <time_for_rise>3</time_for_rise>
+          <sin>
+            <amplitude>5</amplitude>
+            <period>20</period>
+          </sin>
+          <noise type="gaussian">
+           <mean>0</mean>
+           <stddev>0.03</stddev>
+          </noise>
+        </direction>
+      </horizontal>
+      <vertical>
+        <noise type="gaussian">
+         <mean>0</mean>
+         <stddev>0.03</stddev>
+        </noise>
+      </vertical>
+    </plugin>
+
+
+  </world>
+</sdf>

@@ -46,21 +46,19 @@ class TensorboardCallback(BaseCallback):
         for d in infos or []:
             if isinstance(d, dict):
                 merged.update(d)
-
         # make sure that they are in info dict as well. !!
-        env_keys = ["max_stable_time"]
-        for k in env_keys:
-            if k in merged:
-                self.logger.record(f"env/{k}", merged[k])
+        # env_keys = ["max_stable_time"]
+        # for k in env_keys:
+        #     if k in merged:
+        #         self.logger.record(f"env/{k}", merged[k])
 
         # gains    
-        for k in self.log_gain_keys:
-            self.logger.record(f"gains/{k}", merged[k])
+        # for k in self.log_gain_keys:
+        #     self.logger.record(f"gains/{k}", merged[k])
 
         # log returns after each episode end
         rewards = np.asarray(self.locals["rewards"], dtype=float)     # shape: (n_envs,)
         dones   = np.asarray(self.locals["dones"], dtype=bool)        # shape: (n_envs,)
-
         # online update: G_t = Σ r_k * gamma^k
         self.ep_ret += rewards
         self.ep_disc += self.pow_gamma * rewards
@@ -71,6 +69,7 @@ class TensorboardCallback(BaseCallback):
             if d:
                 self.logger.record("rollout/ep_ret_undisc", float(self.ep_ret[i]))
                 self.logger.record("rollout/ep_ret_disc", float(self.ep_disc[i]))
+                # print(f"Done {i}")
                 self.ep_ret[i] = 0.0
                 self.ep_disc[i] = 0.0
                 self.pow_gamma[i] = 1.0

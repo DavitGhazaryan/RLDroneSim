@@ -94,8 +94,8 @@ class SimGymEnv(BaseEnv, gym.Env):
             self.max_stable_time = 0
 
             self.ep_initial_pose, self.ep_initial_attitude, self.ep_initial_gains = self._get_random_initial_state()
-            print("Reseted pose")
-            print(self.ep_initial_pose)
+            # print("Reseted pose")
+            # print(self.ep_initial_pose)
             self.curr_gains = self.ep_initial_gains.copy()
             for gain in self.action_gains:
                 self.drone.set_param_and_confirm(gain, self.ep_initial_gains[gain])
@@ -136,6 +136,6 @@ class SimGymEnv(BaseEnv, gym.Env):
         return {
             'x_m': self.goal_pose['x_m'],
             'y_m': self.goal_pose['y_m'],    
-            'z_m': max(self.goal_pose['z_m']+ self.np_random.uniform(-0.01, 0.01), 1.3) 
+            'z_m': max(self.goal_pose['z_m']+ self.np_random.uniform(-3.0, 3.0), 1.3) 
         }, self.ep_initial_attitude, initial_gains
     

@@ -80,7 +80,7 @@ class ArduPilotSITL(Drone):
 
         self.gazebo.resume_simulation()
     
-        self.send_reset(pose[1], pose[0], pose[2])
+        # self.send_reset(pose[1], pose[0], pose[2])
 
     def start_sitl(self):
         if self.is_running():
