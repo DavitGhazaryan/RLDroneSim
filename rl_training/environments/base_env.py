@@ -56,6 +56,7 @@ class BaseEnv:
         self.eps_stable_time = 0
         self.max_stable_time = 0
 
+        self.stability_length = 0
 
         atexit.register(self.close)
     
@@ -84,18 +85,22 @@ class BaseEnv:
         Handle flattened actions for Stable Baselines compatibility.
         Actions are changes to PID parameters that need to be applied.
         """
+        # print(action)
         self.episode_step += 1
-        
+        # print()
         # start = time.time()
+        master = self.drone._get_mavlink_connection()
+        master.wait_heartbeat()
         for i, var in enumerate(self.action_gains):
             self.curr_gains[var] = max(self.curr_gains[var] +  action[i], 0)
+
+            # print(f"Param {var} set {self.curr_gains[var]}")
             self.drone.set_param_and_confirm(var, self.curr_gains[var])
 
         self.drone.wait(self.action_dt)   # no need to normalize the sleep time with speedup
 
 
         # first get more complete info then construct observation from that        
-        master = self.drone._get_mavlink_connection()
         master.wait_heartbeat()
         messages = master.messages    # same messages are used for single step
 
@@ -167,6 +172,7 @@ class BaseEnv:
         
         for gain in self.action_gains:
             value = self.drone.get_param(gain)
+            # print(f"Param {gain} is {value}")
             self.ep_initial_gains[gain] =value
             self.first_initial_gains[gain] = value
             self.curr_gains[gain] = value
@@ -206,20 +212,20 @@ class BaseEnv:
         # print(message.y, message.x, -message.z)
         # print(attitude)
         # 1. Attitude Error
-        if abs(math.degrees(attitude.pitch) - self.goal_orientation['pitch_deg']) > 15 or abs(math.degrees(attitude.roll) - self.goal_orientation['roll_deg']) > 15:
+        if abs(math.degrees(attitude.pitch) - self.goal_orientation['pitch_deg']) > 40 or abs(math.degrees(attitude.roll) - self.goal_orientation['roll_deg']) > 40:
             # print(abs(math.degrees(attitude.pitch) - self.goal_orientation['pitch_deg']), "pitch deg")
             # print(abs(math.degrees(attitude.roll) - self.goal_orientation['roll_deg']), "roll deg")
             return True, Termination.ATTITUDE_ERR
         
         # Velocity magnitude
-        if abs(message.vx) > 4 or abs(message.vy) > 4 or abs(message.vz) > 4:
+        if abs(message.vx) > 8 or abs(message.vy) > 8 or abs(message.vz) > 8:
             # print(abs(message.vx), abs(message.vy), abs(message.vz))
             return True, Termination.VEL_EXC
         
         # 2. Flip (pitch or roll > 90 deg)
         if abs(math.degrees(attitude.pitch)) > 90 or abs(math.degrees(attitude.roll)) > 90:
             # print(abs(math.degrees(attitude.pitch)), abs(math.degrees(attitude.roll)))
-            return True, Termination.FLIPgm
+            return True, Termination.FLIP
         
         # 3. 2x farther xy from goal than originally
         dist_xy_init = np.linalg.norm(np.array([self.ep_initial_pose["x_m"], self.ep_initial_pose["y_m"], self.ep_initial_pose["z_m"]]) 
@@ -231,28 +237,13 @@ class BaseEnv:
         alt_init = abs(self.ep_initial_pose["z_m"] - self.goal_pose["z_m"])
         alt_now = abs(-message.z - self.goal_pose["z_m"])
        
-        if (dist_xy_now > 3.0 * dist_xy_init and dist_xy_now > 0.1) or (alt_now > alt_init * 3.0  and alt_now > 0.1):
+        if (dist_xy_now > 50.0 * dist_xy_init and dist_xy_init > 0.01) or (alt_now > alt_init * 40.0  and alt_init > 0.01):
             # print(f"dist_xy_now {dist_xy_now}")
             # print(f"dist_xy_init {dist_xy_init}")
             # print(f"alt_now  {alt_now }")
             # print(f"alt_init  {alt_init }")
             return True, Termination.FAR
 
-
-        # 5. goal is reached - check both position and altitude
-        pos_err_cm = messages["NAV_CONTROLLER_OUTPUT"].wp_dist   # in cm integers
-        alt_err_m = messages["NAV_CONTROLLER_OUTPUT"].alt_error
-        
-        # Check if in vicinity using helper method
-        in_vicinity = self._check_vicinity_status(pos_err_cm, alt_err_m * 100)
-        
-        # Update stable time tracking (consolidated logic)
-        if in_vicinity:
-            self.eps_stable_time += 1
-        else:
-            if self.eps_stable_time > self.max_stable_time:
-                self.max_stable_time = self.eps_stable_time
-            self.eps_stable_time = 0
         return False, None 
 
     def _compute_reward(self, messages, reason, truncated):
@@ -297,9 +288,25 @@ class BaseEnv:
                 + w.get("accZ_w")    * acc_err_d 
                 + w.get("acc_yaw_w") * acc_err_yaw
             )
+            # print(alt_err, pos_err_cm)
+            if alt_err < 1.0 and pos_err_cm < 1.0:  # normalized with tolerance
+                self.eps_stable_time += 1
+            else:
+                if self.eps_stable_time > self.max_stable_time:
+                    self.max_stable_time = self.eps_stable_time
+                self.eps_stable_time = 0
 
+            # Weighted bonus aggregation
+            b_t = (
+                (10 if alt_err < 1.0 and vel_err_d < 2.0 else 0) +
+                (10 if pos_err_cm < 1.0 and vel_err_e < 2.0 and vel_err_n < 2.0 else 0) + 
+                self.eps_stable_time * 10
+            )
+            # print(b_t, self.eps_stable_time)
             # Decrease reward based on the errors
             r -= e_t
+
+            r += b_t
 
             if reason:
                 match reason:
@@ -316,9 +323,7 @@ class BaseEnv:
             if truncated:  
                 r += self.reward_coefs.get("success_reward")
                 
-                kappa = self.reward_coefs.get("stable_time_coef")
-                r += kappa * self.max_stable_time
-            
+                r += self.reward_coefs.get("stable_time_coef") * self.max_stable_time
             return r
         else:
             raise NotImplementedError()

@@ -10,12 +10,12 @@ from stable_baselines3.common.monitor import Monitor # pyright: ignore[reportMis
 
 def main():
     algo = "td3"   # baseline, td3, ddpg
-    training_number = '20251104_171135'
-    checkpoint_step = "995000"
+    training_number = '20251124_125755'
+    checkpoint_step = "600000"
     
     # modify params
     gui = True
-    speedup = 1
+    speedup = 6
 
     if algo != "baseline":
         config_path = f'/home/pid_rl/rl_training/runs/hover/{algo}/{training_number}/cfg.yaml'

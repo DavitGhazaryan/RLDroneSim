@@ -37,8 +37,9 @@ class GazeboInterface:
 
         if self._sdf_file and not os.path.exists(self._sdf_file):
             raise FileNotFoundError(f"SDF file not found: {self._sdf_file}")
-
-        self._world_name = self._parse_world_name(self._sdf_file)        
+        print(self._sdf_file)
+        self._world_name = self._parse_world_name(self._sdf_file)      
+        print(self._world_name)  
         self._process = None
 
     def start_simulation(self):

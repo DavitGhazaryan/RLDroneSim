@@ -43,7 +43,7 @@ class Drone:
             float(msg_id), float(interval_us), 0, 0, 0, 0, 0)
         master.recv_match(type="COMMAND_ACK", blocking=True, timeout=0.5)      
 
-    def set_param_and_confirm(self, name_str, value, timeout=3.0):
+    def set_param_and_confirm(self, name_str, value, timeout=6.0):
         """
         Sets the parameter and waits for the acknowledgement message.
         """
@@ -66,11 +66,12 @@ class Drone:
                 if abs(float(msg.param_value) - float(value)) <= 0.01:
                     return True  # confirmed exact (within tol)
                 else:
+                    print("Param is not set correctly")
                     print(msg)
                 return True
             else: 
                 print(f"another one was requested here {pid} , {name_str}")
-        print("Param is NOT SET")
+        print(f"Param {name_str} is NOT SET")
         return False
 
     def get_param(self, param_name, timeout=3.0, resend_every=0.5):

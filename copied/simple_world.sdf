@@ -18,7 +18,7 @@
     <plugin filename="gz-sim-navsat-system" name="gz::sim::systems::NavSat"/>
 
     <!-- Turn off for efficiency -->
-    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <!-- <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/> -->
 
     <!-- Geographic coordinates -->
     <spherical_coordinates>
@@ -50,9 +50,9 @@
     <include>
       <uri>model://iris_with_ardupilot</uri>
       <pose degrees="true">0 0 0.195 0 0 90</pose>
-     </include>
-<!--
-      <model name="wind_model">
+    </include>
+
+      <!-- <model name="wind_model">
       <pose>0 0 0 0 0 0</pose>
       <static>false</static>
       <enable_wind>true</enable_wind>
@@ -271,9 +271,10 @@
     </model> -->
 
 
-    <wind>
+    <!-- <wind>
       <linear_velocity>0 0 0</linear_velocity>
     </wind>
+
     <plugin
       filename="gz-sim-wind-effects-system"
       name="gz::sim::systems::WindEffects">
@@ -308,7 +309,7 @@
          <stddev>0.00</stddev>
         </noise>
       </vertical>
-    </plugin>
+    </plugin> -->
 
 
   </world>

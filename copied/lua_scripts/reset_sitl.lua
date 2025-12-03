@@ -41,8 +41,8 @@
 --   if not tgt then gcs:send_text(0, "reset: no origin/invalid inputs"); return end
 
 --   if ahrs.reset then ahrs:reset() end
---   -- gcs:send_text(0, "Here do reset")
---   -- reset_controller_state()
+-- --   gcs:send_text(0, "Here do reset")
+--   reset_controller_state()
   
 --   local q = Quaternion()
 --   local yaw = ahrs:get_yaw_rad() or 0    -- radians

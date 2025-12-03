@@ -9,12 +9,12 @@
 environment_config:
   max_episode_steps: 100
   mode: "altitude"               # Flight mode: position, attitude, stabilize, altitude
-  observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_ACCZ_P"  # Which PID gains to observe
+  observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_ACCZ_P+PSC_VELZ_D"  # Which PID gains to observe
   # observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"  # Which PID gains to observe
   observable_states: "alt_err+vZ_err+accZ_err" # Which states to observe
-  action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_ACCZ_P"      # Which PID gains to adjust
+  action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_ACCZ_P+PSC_VELZ_D"      # Which PID gains to adjust
   # action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"      # Which PID gains to adjust
-  action_dt: 0.05                 # Time interval between action and observation
+  action_dt: 1.0                 # Time interval between action and observation
   takeoff_altitude: 5.0          #  meters
   verbose: false                  # controls custom logging not internal
 
@@ -56,7 +56,7 @@ training_config:
 
 td3_params:
   learning_rate: 0.0015                          # Learning rate for actor and critic networks
-  buffer_size: 100000                          # Size of replay buffer
+  buffer_size: 80000                          # Size of replay buffer
   learning_starts: 10000                         # Steps before learning begins
   batch_size: 1024                              # Batch size for training
   tau: 0.005                                    # Soft update coefficient for target networks
@@ -70,8 +70,8 @@ td3_params:
   verbose: 1                                    # Verbosity level
   policy_kwargs:
     net_arch: 
-      pi: [256, 256]  # Actor (policy) network architecture
-      qf: [256, 256]  # Critic (value) network architecture
+      pi: [512, 512]  # Actor (policy) network architecture
+      qf: [512, 512]  # Critic (value) network architecture
     share_features_extractor:
       false
   target_policy_noise: 0.2
@@ -82,8 +82,6 @@ td3_params:
   device: "cuda"                                # Device for training (auto, cpu, cuda)
   _init_setup_model: true                       # For TD3 specific initialization
 
-
-
 callbacks:
   - type: "checkpoint"                         # Checkpoint callback type
     save_freq: 1000                            # Save frequency for checkpoints
@@ -91,15 +89,15 @@ callbacks:
 
 reward_config:
   altitude:                        # Mode
-    alt_w: 1                       # Weight for altitude error
-    xy_w: 1                        # Weight for XY position error
-    velN_w: 0                      # Weight for North velocity err
-    velE_w: 0                      # Weight for East velocity err
-    velZ_w: 0                      # Weight for Down velocity err
+    alt_w: 3                       # Weight for altitude error
+    xy_w:  2                       # Weight for XY position error
+    velN_w: 1                      # Weight for North velocity err
+    velE_w: 1                      # Weight for East velocity err
+    velZ_w: 1                      # Weight for Down velocity err
     accN_w: 0                      # Weight for North acceleration err
     accE_w: 0                      # Weight for East acceleration err
     accZ_w: 0                      # Weight for Down acceleration err
-    acc_yaw_w: 1                   # Weight for yaw acceleration err
+    acc_yaw_w: 0                   # Weight for yaw acceleration err
     stable_time_coef: 0
     success_reward: 0
     crash_penalty_att:  -20                      # Penalty for crashes

@@ -136,6 +136,6 @@ class SimGymEnv(BaseEnv, gym.Env):
         return {
             'x_m': self.goal_pose['x_m'],
             'y_m': self.goal_pose['y_m'],    
-            'z_m': max(self.goal_pose['z_m']+ self.np_random.uniform(-3.0, 3.0), 1.3) 
+            'z_m': max(self.goal_pose['z_m']+ self.np_random.uniform(-0.01, 0.01), 1.3) 
         }, self.ep_initial_attitude, initial_gains
     
