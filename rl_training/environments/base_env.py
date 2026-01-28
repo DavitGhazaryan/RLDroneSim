@@ -106,6 +106,8 @@ class BaseEnv:
 
 
         observation, info = self._get_observation(self.curr_gains, messages)
+        
+        alt_err, x_err, y_err = self._get_errors(messages)
 
         terminated, reason = self._check_terminated(messages)
         if terminated:
@@ -121,14 +123,24 @@ class BaseEnv:
         info = {
             'reason': reason,
             'episode_step': self.episode_step,
+            'alt_err': alt_err,
+            'x_err': x_err,
+            'y_err': y_err
         }
+
         reward = self._compute_reward(messages, reason, truncated)
         # print(reward)
-        for i, var in enumerate(self.action_gains):
-            info[var] = self.curr_gains[var]
+        # for i, var in enumerate(self.action_gains):
+        #     info[var] = self.curr_gains[var]
 
         return observation, reward, terminated, truncated, info
 
+    def _get_errors(self, messages):
+        alt_err = messages["NAV_CONTROLLER_OUTPUT"].alt_error
+        x_err = messages["LOCAL_POSITION_NED"].y    # note reveresed
+        y_err = messages["LOCAL_POSITION_NED"].x    # note reveresed
+        return alt_err, x_err, y_err
+    
     def _get_observation(self, new_gains, messages=None):
 
         # Initialize flattened observation array
@@ -154,6 +166,12 @@ class BaseEnv:
                 state_value = messages["DEBUG_VECT"].z
             elif observable_state == 'accZ_err':
                 state_value = messages["PID_TUNING[4]"].desired - messages["PID_TUNING[4]"].achieved   # underneath it is not desired but target
+            elif observable_state == 'x_err':
+                message = messages["LOCAL_POSITION_NED"]
+                state_value = message.y    # note reveresed
+            elif observable_state == 'y_err':
+                message = messages["LOCAL_POSITION_NED"]
+                state_value = message.x    # note reveresed
             else:
                 raise NotImplemented("Observation not available")
             observation[idx] = state_value

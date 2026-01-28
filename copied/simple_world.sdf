@@ -18,7 +18,7 @@
     <plugin filename="gz-sim-navsat-system" name="gz::sim::systems::NavSat"/>
 
     <!-- Turn off for efficiency -->
-    <!-- <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/> -->
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
 
     <!-- Geographic coordinates -->
     <spherical_coordinates>

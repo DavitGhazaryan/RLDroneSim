@@ -37,7 +37,9 @@ class TensorboardCallback(BaseCallback):
         self.ep_ret = np.zeros(self.n_envs, dtype=float)
         self.ep_disc = np.zeros(self.n_envs, dtype=float)
         self.pow_gamma = np.ones(self.n_envs, dtype=float)
-
+        self.ep_alt_err = np.zeros(self.n_envs, dtype=float)
+        self.ep_x_err = np.zeros(self.n_envs, dtype=float)
+        self.ep_y_err = np.zeros(self.n_envs, dtype=float)
 
     def _on_step(self) -> bool:
         infos = self.locals.get("infos", [])
@@ -56,21 +58,39 @@ class TensorboardCallback(BaseCallback):
         # for k in self.log_gain_keys:
         #     self.logger.record(f"gains/{k}", merged[k])
 
+        # log errors for each episode
+        alt_errors = merged["alt_err"]
+        x_errors =   merged["x_err"]
+        y_errors =   merged["y_err"]
+        self.ep_alt_err +=   np.abs(merged["alt_err"])
+        self.ep_x_err   +=   np.abs(merged["x_err"])
+        self.ep_y_err   +=   np.abs(merged["y_err"])
+
         # log returns after each episode end
         rewards = np.asarray(self.locals["rewards"], dtype=float)     # shape: (n_envs,)
         dones   = np.asarray(self.locals["dones"], dtype=bool)        # shape: (n_envs,)
+        
+        
         # online update: G_t = Σ r_k * gamma^k
         self.ep_ret += rewards
         self.ep_disc += self.pow_gamma * rewards
         self.pow_gamma *= self.gamma
+
 
         # log + reset on episode end for each env
         for i, d in enumerate(dones):
             if d:
                 self.logger.record("rollout/ep_ret_undisc", float(self.ep_ret[i]))
                 self.logger.record("rollout/ep_ret_disc", float(self.ep_disc[i]))
+                self.logger.record("rollout/ep_alt_err", float(self.ep_alt_err))
+                self.logger.record("rollout/ep_x_err", float(self.ep_x_err))
+                self.logger.record("rollout/ep_y_err", float(self.ep_y_err))
+                
                 # print(f"Done {i}")
                 self.ep_ret[i] = 0.0
                 self.ep_disc[i] = 0.0
                 self.pow_gamma[i] = 1.0
+                self.ep_alt_err = 0.0
+                self.ep_x_err = 0.0
+                self.ep_y_err = 0.0
         return True

@@ -11,7 +11,7 @@ environment_config:
   mode: "altitude"               # Flight mode: position, attitude, stabilize, altitude
   observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_ACCZ_P+PSC_VELZ_D"  # Which PID gains to observe
   # observable_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"  # Which PID gains to observe
-  observable_states: "alt_err+vZ_err+accZ_err" # Which states to observe
+  observable_states: "alt_err+vZ_err+accZ_err+x_err+y_err" # Which states to observe
   action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_ACCZ_P+PSC_VELZ_D"      # Which PID gains to adjust
   # action_gains: "PSC_POSZ_P+PSC_VELZ_P+PSC_VELZ_I+PSC_VELZ_D+PSC_ACCZ_P+PSC_ACCZ_I+PSC_ACCZ_D"      # Which PID gains to adjust
   action_dt: 1.0                 # Time interval between action and observation
@@ -57,12 +57,12 @@ training_config:
 td3_params:
   learning_rate: 0.0015                          # Learning rate for actor and critic networks
   buffer_size: 80000                          # Size of replay buffer
-  learning_starts: 10000                         # Steps before learning begins
-  batch_size: 1024                              # Batch size for training
+  learning_starts: 5000                         # Steps before learning begins
+  batch_size: 2048                              # Batch size for training
   tau: 0.005                                    # Soft update coefficient for target networks
   gamma: 0.99                                   # Discount factor for future rewards
-  train_freq: 1                                 # Training frequency (every N steps)
-  gradient_steps: 10                            # Gradient steps per training update
+  train_freq: 2                                 # Training frequency (every N steps)
+  gradient_steps: 20                            # Gradient steps per training update
   action_noise:                                 # Action noise for exploration
     type: "NormalActionNoise"                   # Noise type: NormalActionNoise
     mean: 0.0                                   # Mean of noise distribution
@@ -89,14 +89,14 @@ callbacks:
 
 reward_config:
   altitude:                        # Mode
-    alt_w: 3                       # Weight for altitude error
-    xy_w:  2                       # Weight for XY position error
+    alt_w: 4                       # Weight for altitude error
+    xy_w:  3                       # Weight for XY position error
     velN_w: 1                      # Weight for North velocity err
     velE_w: 1                      # Weight for East velocity err
     velZ_w: 1                      # Weight for Down velocity err
-    accN_w: 0                      # Weight for North acceleration err
-    accE_w: 0                      # Weight for East acceleration err
-    accZ_w: 0                      # Weight for Down acceleration err
+    accN_w: 1                      # Weight for North acceleration err
+    accE_w: 1                      # Weight for East acceleration err
+    accZ_w: 1                      # Weight for Down acceleration err
     acc_yaw_w: 0                   # Weight for yaw acceleration err
     stable_time_coef: 0
     success_reward: 0
