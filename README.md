@@ -43,7 +43,7 @@ This project uses Docker for easy deployment and consistent environment setup. T
 
 1. **Clone the repository**
    ```bash
-   git clone git@github.com:GorArzanyanAUA/pid_rl.git
+   git clone https://github.com/DavitGhazaryan/RLDroneSim.git
    cd pid_rl
    ```
 
