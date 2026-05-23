@@ -83,7 +83,7 @@ This section describes how to set up the project on Windows using WSLG (Windows 
 
 1. **Clone the repository inside your WSL environment**
    ```bash
-   git clone git@github.com:GorArzanyanAUA/pid_rl.git
+   git clone https://github.com/DavitGhazaryan/RLDroneSim.git
    cd pid_rl
    ```
 
