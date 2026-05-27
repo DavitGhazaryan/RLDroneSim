@@ -7,7 +7,7 @@ This project was funded by the Afeyan Foundation Research Grant Program at the A
 ## Project Structure
 
 ```
-pid_rl/
+RLDroneSim/
 ├── ardupilot/                # Ardupilot source code  (No changes)
 │   ├── ArduCopter/           # Copter firmware
 │   └── Tools/                # Ardupilot tools including sim_vehicle.py for SITL
@@ -44,7 +44,7 @@ This project uses Docker for easy deployment and consistent environment setup. T
 1. **Clone the repository**
    ```bash
    git clone https://github.com/DavitGhazaryan/RLDroneSim.git
-   cd pid_rl
+   cd RLDroneSim
    ```
 
 2. **Configure X11 access for GUI applications**
@@ -84,7 +84,7 @@ This section describes how to set up the project on Windows using WSLG (Windows 
 1. **Clone the repository inside your WSL environment**
    ```bash
    git clone https://github.com/DavitGhazaryan/RLDroneSim.git
-   cd pid_rl
+   cd RLDroneSim
    ```
 
 2. **Build the Docker container using the WSLG-specific compose file**
