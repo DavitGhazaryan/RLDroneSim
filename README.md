@@ -1,6 +1,6 @@
 # Ardupilot RL Training System
 
-A comprehensive framework for training reinforcement learning agents on Ardupilot SITL (Software In The Loop) with Gazebo simulation.
+A simulation platform for training reinforcement learning agents on Ardupilot SITL (Software In The Loop) with Gazebo simulation.
 
 This project was funded by the Afeyan Foundation Research Grant Program at the American University of Armenia.
 
