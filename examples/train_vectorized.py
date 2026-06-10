@@ -228,10 +228,14 @@ def main():
             pass
 
         # Train (fresh or resume)
+        # model = train_agent(venv, config, run_dirs, checkpoint=checkpoint)
+
+        # venv.save(vecnorm_path)
         model = train_agent(venv, config, run_dirs, checkpoint=checkpoint)
 
+        vecnorm_path = os.path.join(run_dirs["models_dir"], "vecnormalize.pkl")
         venv.save(vecnorm_path)
-
+        print(f"✅ VecNormalize stats saved to: {vecnorm_path}")
     except Exception as e:
         print(f"\n❌ Error occurred: {e}")
         import traceback

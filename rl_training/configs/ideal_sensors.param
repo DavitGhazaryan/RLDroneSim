@@ -344,7 +344,7 @@ SIM_OPOS_HDG,0
 
 
 # -------- EKF: stable, permissive (SITL ONLY) -------
-# ARMING_CHECK,0           # don’t block arming on sensor checks (SITL)
+ARMING_CHECK,0           # don’t block arming on sensor checks (SITL)
 # FS_EKF_THRESH,0         # disable EKF failsafe trigger
 
 GPS_TYPE, 0

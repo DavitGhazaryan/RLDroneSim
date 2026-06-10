@@ -97,15 +97,16 @@ class ArduPilotSITL(Drone):
 
     def wait(self, duration):
         """
-        Sleep for the given duration (in seconds) using Gazebo simulation time.
-        """
-        start_time = self.gazebo.get_sim_time()
-        while True:
-            time.sleep(0.001)
-            current_time = self.gazebo.get_sim_time()
-            if current_time - start_time >= duration:
-                break
+        Wait using wall-clock time scaled by SITL speedup.
 
+        This avoids blocking on /sim_time when the Gazebo time service is not
+        available. For RL training, this is usually acceptable because SITL is
+        already started with --speedup.
+        """
+        if self.speedup > 0:
+            time.sleep(duration / self.speedup)
+        else:
+            time.sleep(duration)
 
     def is_running(self) -> bool:
         return bool(self.process and self.process.poll() is None)

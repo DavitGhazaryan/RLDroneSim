@@ -180,26 +180,42 @@ class Drone:
             logger.error(f"Failed to set mode {mode_name}: {e}")
             return False
 
-    def arm_drone(self, timeout=10):
+
+    def arm_drone(self, timeout=30):
         self._mavlink_master.wait_heartbeat()
+
+        self._mavlink_master.mav.command_long_send(
+            self._mavlink_master.target_system,
+            self._mavlink_master.target_component,
+            mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+            0,
+            1, 0, 0, 0, 0, 0, 0
+        )
+
+        ack = self._mavlink_master.recv_match(type="COMMAND_ACK", blocking=True, timeout=10)
+
+        if not ack:
+            raise TimeoutError("No COMMAND_ACK received for arm command")
+
+        if ack.command != mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM:
+            raise RuntimeError(f"Unexpected ACK while arming: {ack}")
+
+        if ack.result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+            raise RuntimeError(f"Arming rejected by ArduPilot: {ack}")
+
         t0 = time.time()
         while time.time() - t0 < timeout:
             hb = self._mavlink_master.recv_match(type="HEARTBEAT", blocking=True, timeout=1.0)
             if not hb:
                 continue
-            if hb.system_status == mavutil.mavlink.MAV_STATE_STANDBY:
-                break
-            time.sleep(0.1)
-        if time.time() - t0 >= timeout:
-            raise TimeoutError("Failed to arm the drone")
-        
-        self._mavlink_master.mav.command_long_send(
-            self._mavlink_master.target_system, self._mavlink_master.target_component,
-                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0
-        )
 
-        self._mavlink_master.recv_match(type='COMMAND_ACK', blocking=True, timeout=10)
+            armed = bool(hb.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
+            if armed:
+                print("✅ Vehicle armed successfully")
+                return True
 
+        raise TimeoutError("Arm command was accepted, but vehicle did not report armed=True")
+    
     def takeoff_drone(self, altitude):
         self._mavlink_master.wait_heartbeat()
         self._mavlink_master.mav.command_long_send(
