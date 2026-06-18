@@ -38,7 +38,13 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
         print(f"\n🚀 Starting {algo} training for {total_timesteps} timesteps...")
 
     action_dim = env.action_space.shape[0]
-    action_noise = create_action_noise_from_config(algo_config.get('action_noise'), action_dim)
+
+    # TD3/DDPG use external action noise.
+    # PPO uses its stochastic policy for exploration, so no action noise is needed.
+    if algo in ['td3', 'ddpg']:
+        action_noise = create_action_noise_from_config(algo_config.get('action_noise'), action_dim)
+    else:
+        action_noise = None
 
     tb_run_name = "run"
     if checkpoint:
@@ -59,18 +65,28 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
         if algo == 'td3':
             from stable_baselines3 import TD3   # type: ignore
             model = TD3.load(checkpoint, env=env, device=algo_config.get('device'))
+            model.action_noise = action_noise
+
         elif algo == 'ddpg':
             from stable_baselines3.ddpg import DDPG   # type: ignore
             model = DDPG.load(checkpoint, env=env, device=algo_config.get('device'))
+            model.action_noise = action_noise
 
-        model.action_noise = action_noise
+        elif algo == 'ppo':
+            from stable_baselines3 import PPO   # type: ignore
+            model = PPO.load(checkpoint, env=env, device=algo_config.get('device', 'auto'))
 
-        rb_path = _replay_for(checkpoint)
-        if rb_path:
-            print(f"🔄 Loading replay buffer: {rb_path}")
-            model.load_replay_buffer(rb_path)
         else:
-            print("⚠️ Replay buffer not found for this checkpoint; continuing without it.")     
+            raise ValueError(f"Unsupported algorithm for resume: {algo}")
+
+        # Replay buffers are used only by off-policy algorithms.
+        if algo in ['td3', 'ddpg']:
+            rb_path = _replay_for(checkpoint)
+            if rb_path:
+                print(f"🔄 Loading replay buffer: {rb_path}")
+                model.load_replay_buffer(rb_path)
+            else:
+                print("⚠️ Replay buffer not found for this checkpoint; continuing without it.")     
     else:
         policy_kwargs = algo_config['policy_kwargs']
         if algo == 'td3':
@@ -101,7 +117,7 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
                 device=algo_config.get('device', "auto"),  # Device to run on (e.g., "cpu", "cuda")
                 _init_setup_model=algo_config.get('_init_setup_model', True)  # Whether to initialize model automatically
             )
-        else:
+        elif algo == 'ddpg':
             from stable_baselines3.ddpg import DDPG   # type: ignore
             model = DDPG(
                 "MlpPolicy",
@@ -114,18 +130,50 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
                 gamma=algo_config.get('gamma'),
                 train_freq=algo_config.get('train_freq'),
                 gradient_steps=algo_config.get('gradient_steps'),
-                optimize_memory_usage=algo_config.get('optimize_memory_usage', False),  # Optimization for memory usage
-                action_noise=action_noise,  # Action noise for exploration (NormalActionNoise or others)
-                replay_buffer_class=None,  # Optionally pass a custom replay buffer class
-                replay_buffer_kwargs=None,  # Optionally pass kwargs for custom replay buffer
-                n_steps=algo_config.get('n_steps', -1),  # Number of steps to collect per update (default -1)
-                policy_kwargs=policy_kwargs,  # Policy network architecture (e.g., MLP)
-                verbose=algo_config.get('verbose', 1),  # Verbosity level (0 = silent, 1 = progress bar)
-                seed=algo_config.get('seed'),  # Seed for reproducibility
-                device=algo_config.get('device', "auto"),  # Device to train on (cpu, cuda)
-                _init_setup_model=algo_config.get('_init_setup_model', True),  # Whether to initialize model automatically
-                tensorboard_log=tensorboard_log  # Path for TensorBoard logging
+                optimize_memory_usage=algo_config.get('optimize_memory_usage', False),
+                action_noise=action_noise,
+                replay_buffer_class=None,
+                replay_buffer_kwargs=None,
+                n_steps=algo_config.get('n_steps', -1),
+                policy_kwargs=policy_kwargs,
+                verbose=algo_config.get('verbose', 1),
+                seed=algo_config.get('seed'),
+                device=algo_config.get('device', "auto"),
+                _init_setup_model=algo_config.get('_init_setup_model', True),
+                tensorboard_log=tensorboard_log
             )
+
+        elif algo == 'ppo':
+            from stable_baselines3 import PPO   # type: ignore
+            model = PPO(
+                "MlpPolicy",
+                env,
+                learning_rate=linear_schedule,
+                n_steps=algo_config.get('n_steps', 2048),
+                batch_size=algo_config.get('batch_size', 64),
+                n_epochs=algo_config.get('n_epochs', 10),
+                gamma=algo_config.get('gamma', 0.99),
+                gae_lambda=algo_config.get('gae_lambda', 0.95),
+                clip_range=algo_config.get('clip_range', 0.2),
+                clip_range_vf=algo_config.get('clip_range_vf', None),
+                normalize_advantage=algo_config.get('normalize_advantage', True),
+                ent_coef=algo_config.get('ent_coef', 0.001),
+                vf_coef=algo_config.get('vf_coef', 0.5),
+                max_grad_norm=algo_config.get('max_grad_norm', 0.5),
+                use_sde=algo_config.get('use_sde', False),
+                sde_sample_freq=algo_config.get('sde_sample_freq', -1),
+                target_kl=algo_config.get('target_kl', None),
+                stats_window_size=algo_config.get('stats_window_size', 100),
+                verbose=algo_config.get('verbose', 1),
+                tensorboard_log=tensorboard_log,
+                policy_kwargs=policy_kwargs,
+                seed=algo_config.get('seed', None),
+                device=algo_config.get('device', "auto"),
+                _init_setup_model=algo_config.get('_init_setup_model', True)
+            )
+
+        else:
+            raise ValueError(f"Unsupported algorithm: {algo}")
 
     callbacks = []
     for callback_config in callbacks_config:
@@ -136,7 +184,7 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
                 save_freq=callback_config.get('save_freq'),
                 save_path=save_path,
                 name_prefix=algo,
-                save_replay_buffer=True,
+                save_replay_buffer=(algo in ['td3', 'ddpg']),
                 save_vecnormalize=True
             )
             callbacks.append(checkpoint_callback)

@@ -21,11 +21,11 @@ environment_config:
 training_config:
   total_timesteps: 1000000                        # Total training timesteps
   runs_base: "/home/pid_rl/rl_training/runs"            # Base directory for all runs
-  algo: "td3"    # "ddpg", "td3"
+  algo: "ppo"    # "ddpg", "td3"
   mission: "hover"                                
   log_interval: 5                            # episodes before dump 
   progress_bar: true                       
-  reset_num_timesteps: false               
+  reset_num_timesteps: True               
 
 
 # ddpg_params:
@@ -81,6 +81,30 @@ td3_params:
   stats_window_size: 200                        # Size of the statistics window for updates
   device: "cuda"                                # Device for training (auto, cpu, cuda)
   _init_setup_model: true                       # For TD3 specific initialization
+
+ppo_params:
+  learning_rate: 0.0001 #0.0003
+  n_steps: 1024 # 2048
+  batch_size: 64
+  n_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  clip_range_vf: null
+  normalize_advantage: true
+  ent_coef: 0.005 #0.001
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  use_sde: false
+  sde_sample_freq: -1
+  target_kl: null
+  stats_window_size: 100
+  verbose: 1
+  seed: null
+  device: cpu
+  _init_setup_model: true
+  policy_kwargs:
+    net_arch: [512, 512] #[256, 256]
 
 callbacks:
   - type: "checkpoint"                         # Checkpoint callback type
