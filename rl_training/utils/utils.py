@@ -91,23 +91,35 @@ def evaluate_agent(model, env, num_episodes, gamma=0.99, verbose=False):
     Args:
         model: Trained model, if none then evaluate the baseline fixed PID
         env: Modified ArdupilotEnv
-        num_episodes: Number of evaluation episodes (overrides config if provided)
+        num_episodes: Number of evaluation episodes
+        gamma: Discount factor
         
     Returns:
         Evaluation results
     """
 
-    # print(f"\n🧪 Evaluating agent over {num_episodes} episodes...")
     episode_rewards = []
     episode_lengths = []
+
+    episode_z_errors = []
+    episode_x_errors = []
+    episode_y_errors = []
     
     obs = env.reset()
-    for episode in range(num_episodes):
+    
+    for episode in range(num_episodes):       
+
         episode_return = 0.0
         episode_discounted_return = 0.0
         episode_length = 0
+
+        sum_z_error = 0.0
+        sum_x_error = 0.0
+        sum_y_error = 0.0
+
         print()
         print(f"Episode {episode + 1}:")
+
         while True:
             if model:
                 action, _ = model.predict(obs, deterministic=True)
@@ -115,10 +127,19 @@ def evaluate_agent(model, env, num_episodes, gamma=0.99, verbose=False):
                 action = env.action_space.sample()  
                 action = action * 0
                 action = [action]
-            # Take step in environment
+
             obs, reward, done, info = env.step(action)
+
+            # Errors are already calculated in BaseEnv.step()
+            # and passed through the info dictionary.
+            alt_err = info[0].get("alt_err", 0.0)
+            x_err = info[0].get("x_err", 0.0)
+            y_err = info[0].get("y_err", 0.0)
+
+            sum_z_error += abs(alt_err)
+            sum_x_error += abs(x_err)
+            sum_y_error += abs(y_err)
             
-            # print(episode_length, reward)
             episode_length += 1            
             episode_return += reward
             episode_discounted_return += (gamma ** episode_length) * reward
@@ -130,22 +151,37 @@ def evaluate_agent(model, env, num_episodes, gamma=0.99, verbose=False):
         episode_rewards.append(episode_return)
         episode_lengths.append(episode_length)
 
-        print()
-        print(f"    Return: {float(episode_return):.2f}, Discounted  {float(episode_discounted_return):.2f}, Length: {int(episode_length)}")
-        episode_length = 0
-        episode_return = 0
-        episode_discounted_return = 0
+        episode_z_errors.append(sum_z_error)
+        episode_x_errors.append(sum_x_error)
+        episode_y_errors.append(sum_y_error)
 
-    # Calculate statistics
+        print()
+        print(
+            f"    Return: {float(episode_return):.2f}, "
+            f"Discounted: {float(episode_discounted_return):.2f}, "
+            f"Length: {int(episode_length)}"
+        )
+        print(f"    Sum Z error: {sum_z_error:.4f}")
+        print(f"    Sum X error: {sum_x_error:.4f}")
+        print(f"    Sum Y error: {sum_y_error:.4f}")
+
     avg_reward = np.mean(episode_rewards)
     std_reward = np.std(episode_rewards)
     avg_length = np.mean(episode_lengths)
+
+    avg_z_error = np.mean(episode_z_errors)
+    avg_x_error = np.mean(episode_x_errors)
+    avg_y_error = np.mean(episode_y_errors)
     
     print("\n📊 Evaluation Results:")
     print(f"   Average reward: {avg_reward:.2f} ± {std_reward:.2f}")
     print(f"   Average episode length: {avg_length:.1f} steps")
     print(f"   Success rate: {sum(1 for r in episode_rewards if r > 0) / len(episode_rewards):.1%}")
 
+    print("\n📍 Error Summary:")
+    print(f"   Average Z error: {avg_z_error:.4f}")
+    print(f"   Average X error: {avg_x_error:.4f}")
+    print(f"   Average Y error: {avg_y_error:.4f}")
 
 import datetime
 import json
