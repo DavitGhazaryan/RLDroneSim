@@ -14,7 +14,44 @@ from rl_training.utils.utils import create_run_dir, save_config_copy, save_git_i
 import os
 import re 
 
+def save_training_parameters(config, output_path):
+    """
+    Save the main training-related configuration sections
+    in a readable text file.
+    """
+    sections = [
+        "environment_config",
+        "training_config",
+        "ppo_params",
+        "td3_params",
+        "ddpg_params",
+        "sac_params",
+        "callbacks",
+        "reward_config",
+    ]
 
+    with open(output_path, "w", encoding="utf-8") as file:
+        for section in sections:
+            file.write("=" * 80 + "\n")
+            file.write(f"{section}\n")
+            file.write("=" * 80 + "\n")
+
+            section_config = config.get(section)
+
+            if section_config is None:
+                file.write("Section not found in configuration.\n\n")
+            else:
+                import yaml
+                file.write(
+                    yaml.safe_dump(
+                        section_config,
+                        sort_keys=False,
+                        default_flow_style=False,
+                    )
+                )
+                file.write("\n")
+
+    print(f"✅ Training parameters saved to: {output_path}")
 
 def train_agent(env, config, run_dirs, checkpoint: str | None = None):
     """
@@ -28,6 +65,7 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
     training_config = config.get('training_config')
     algo = training_config['algo']
     algo_config = config.get(f'{algo}_params')
+    off_policy_algos = ['td3', 'ddpg', 'sac']
     callbacks_config = config.get('callbacks', [])
     tensorboard_log = run_dirs['tb_dir'] 
     
@@ -76,11 +114,15 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
             from stable_baselines3 import PPO   # type: ignore
             model = PPO.load(checkpoint, env=env, device=algo_config.get('device', 'auto'))
 
+        elif algo == 'sac':
+            from stable_baselines3 import SAC   # type: ignore
+            model = SAC.load(checkpoint, env=env, device=algo_config.get('device', 'auto'))
+        
         else:
             raise ValueError(f"Unsupported algorithm for resume: {algo}")
 
         # Replay buffers are used only by off-policy algorithms.
-        if algo in ['td3', 'ddpg']:
+        if algo in off_policy_algos:
             rb_path = _replay_for(checkpoint)
             if rb_path:
                 print(f"🔄 Loading replay buffer: {rb_path}")
@@ -142,7 +184,37 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
                 _init_setup_model=algo_config.get('_init_setup_model', True),
                 tensorboard_log=tensorboard_log
             )
-
+        elif algo == 'sac':
+            from stable_baselines3 import SAC   # type: ignore
+            model = SAC(
+                "MlpPolicy",
+                env,
+                learning_rate=linear_schedule,
+                buffer_size=algo_config.get('buffer_size'),
+                learning_starts=algo_config.get('learning_starts'),
+                batch_size=algo_config.get('batch_size'),
+                tau=algo_config.get('tau'),
+                gamma=algo_config.get('gamma'),
+                train_freq=algo_config.get('train_freq'),
+                gradient_steps=algo_config.get('gradient_steps'),
+                action_noise=None,
+                replay_buffer_class=None,
+                replay_buffer_kwargs=None,
+                optimize_memory_usage=algo_config.get('optimize_memory_usage', False),
+                ent_coef=algo_config.get('ent_coef', 'auto'),
+                target_update_interval=algo_config.get('target_update_interval', 1),
+                target_entropy=algo_config.get('target_entropy', 'auto'),
+                use_sde=algo_config.get('use_sde', False),
+                sde_sample_freq=algo_config.get('sde_sample_freq', -1),
+                use_sde_at_warmup=algo_config.get('use_sde_at_warmup', False),
+                stats_window_size=algo_config.get('stats_window_size', 100),
+                tensorboard_log=tensorboard_log,
+                policy_kwargs=policy_kwargs,
+                verbose=algo_config.get('verbose', 1),
+                seed=algo_config.get('seed', None),
+                device=algo_config.get('device', "auto"),
+                _init_setup_model=algo_config.get('_init_setup_model', True)
+            )            
         elif algo == 'ppo':
             from stable_baselines3 import PPO   # type: ignore
             model = PPO(
@@ -184,7 +256,7 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
                 save_freq=callback_config.get('save_freq'),
                 save_path=save_path,
                 name_prefix=algo,
-                save_replay_buffer=(algo in ['td3', 'ddpg']),
+                save_replay_buffer=(algo in off_policy_algos),
                 save_vecnormalize=True
             )
             callbacks.append(checkpoint_callback)
@@ -271,6 +343,9 @@ def main():
         if not checkpoint:
             save_config_copy(config, run_dirs['cfg_path'])
             save_git_info(run_dirs['git_path'])
+
+            
+
         else:
             # If you still want snapshots on resume, write to *_resume timestamped files instead.
             pass

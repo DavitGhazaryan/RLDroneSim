@@ -57,6 +57,11 @@ class TensorboardCallback(BaseCallback):
         # gains    
         # for k in self.log_gain_keys:
         #     self.logger.record(f"gains/{k}", merged[k])
+        
+        # Log current PID gains
+        for k in self.log_gain_keys:
+            if k in merged:
+                self.logger.record(f"gains/{k}", float(merged[k]))
 
         # log errors for each episode
         alt_errors = merged["alt_err"]

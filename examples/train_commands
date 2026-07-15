@@ -1,0 +1,65 @@
+cd /home/aua/Desktop/RLDroneSim/RLDroneSim
+docker compose up -d
+docker exec -it pid_rl_container bash
+
+####################################
+
+cd /home/aua/Desktop/RLDroneSim/RLDroneSim
+docker compose restart
+docker exec -it pid_rl_container bash
+
+################################
+
+cd /home/aua/Desktop/RLDroneSim/RLDroneSim
+docker compose up -d
+
+####################################
+
+pkill -9 -f ArduCopter
+pkill -9 -f arducopter
+pkill -9 -f sim_vehicle.py
+pkill -9 -f gz
+pkill -9 -f gazebo
+pkill -9 -f mavproxy
+
+cd /home/pid_rl
+export SITL_RITW_TERMINAL=direct
+python3 examples/eval_model.py
+
+####################################
+pkill -9 -f ArduCopter
+pkill -9 -f arducopter
+pkill -9 -f sim_vehicle.py
+pkill -9 -f MAVProxy
+pkill -9 -f mavproxy
+pkill -9 -f gz
+pkill -9 -f gazebo
+
+cd /home/pid_rl
+export SITL_RITW_TERMINAL=direct
+python3 -u examples/train_vectorized.py 1
+
+
+#####################################
+
+cd /home/aua/Desktop/RLDroneSim/RLDroneSim
+docker exec -it pid_rl_container bash
+
+cd /home/pid_rl
+tensorboard --logdir /home/pid_rl/rl_training/runs/hover/ppo --host 0.0.0.0 --port 6006
+
+nvidia-smi -l 1
+
+
+ffmpeg -f x11grab \
+  -framerate 30 \
+  -video_size 1920x1080 \
+  -i :1.0 \
+  -c:v libx264 \
+  -preset veryfast \
+  -crf 23 \
+  -pix_fmt yuv420p \
+  evaluation.mp4
+
+
+  sudo chown -R aua:aua /home/aua/Desktop/RLDroneSim/RLDroneSim/rl_training/runs

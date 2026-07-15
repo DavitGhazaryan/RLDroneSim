@@ -1,7 +1,7 @@
 # =============================================================================
 # PID RL Training Configuration File
 # =============================================================================
-# This file contains all configuration parameters for training DDPG agents
+# This file contains all configuration parameters for training RL agents
 # on the ArduPilot environment. Modify the values below to experiment with
 # different hyperparameters without changing the code.
 # =============================================================================
@@ -21,11 +21,11 @@ environment_config:
 training_config:
   total_timesteps: 1000000                        # Total training timesteps
   runs_base: "/home/pid_rl/rl_training/runs"            # Base directory for all runs
-  algo: "ppo"    # "ddpg", "td3"
+  algo: "td3"    # "ddpg", "td3", "ppo", "sac"
   mission: "hover"                                
   log_interval: 5                            # episodes before dump 
   progress_bar: true                       
-  reset_num_timesteps: True               
+  reset_num_timesteps: False               
 
 
 # ddpg_params:
@@ -55,28 +55,28 @@ training_config:
 
 
 td3_params:
-  learning_rate: 0.0015                          # Learning rate for actor and critic networks
-  buffer_size: 80000                          # Size of replay buffer
-  learning_starts: 5000                         # Steps before learning begins
-  batch_size: 2048                              # Batch size for training
+  learning_rate: 0.0003                          # Learning rate for actor and critic networks
+  buffer_size: 500000                          # Size of replay buffer
+  learning_starts: 10000                         # Steps before learning begins
+  batch_size: 256                              # Batch size for training
   tau: 0.005                                    # Soft update coefficient for target networks
   gamma: 0.99                                   # Discount factor for future rewards
   train_freq: 2                                 # Training frequency (every N steps)
-  gradient_steps: 20                            # Gradient steps per training update
+  gradient_steps: 1                            # Gradient steps per training update
   action_noise:                                 # Action noise for exploration
     type: "NormalActionNoise"                   # Noise type: NormalActionNoise
     mean: 0.0                                   # Mean of noise distribution
-    sigma: 0.05                                  # Standard deviation of noise
+    sigma: 0.1                                  # Standard deviation of noise
   verbose: 1                                    # Verbosity level
   policy_kwargs:
     net_arch: 
-      pi: [512, 512]  # Actor (policy) network architecture
-      qf: [512, 512]  # Critic (value) network architecture
+      pi: [256, 256]  # Actor (policy) network architecture
+      qf: [256, 256]  # Critic (value) network architecture
     share_features_extractor:
       false
-  target_policy_noise: 0.2
-  target_noise_clip: 0.5                        # Clip range for target noise
-  policy_delay: 3                               # Number of updates before updating actor
+  target_policy_noise: 0.1
+  target_noise_clip: 0.3                        # Clip range for target noise
+  policy_delay: 2                               # Number of updates before updating actor
   n_steps: -1                                   # Steps per update (default -1)
   stats_window_size: 200                        # Size of the statistics window for updates
   device: "cuda"                                # Device for training (auto, cpu, cuda)
@@ -84,15 +84,15 @@ td3_params:
 
 ppo_params:
   learning_rate: 0.0001 #0.0003
-  n_steps: 1024 # 2048
-  batch_size: 64
+  n_steps: 2048
+  batch_size: 128 #64
   n_epochs: 10
   gamma: 0.99
   gae_lambda: 0.95
   clip_range: 0.2
   clip_range_vf: null
   normalize_advantage: true
-  ent_coef: 0.005 #0.001
+  ent_coef: 0.001
   vf_coef: 0.5
   max_grad_norm: 0.5
   use_sde: false
@@ -104,7 +104,40 @@ ppo_params:
   device: cpu
   _init_setup_model: true
   policy_kwargs:
-    net_arch: [512, 512] #[256, 256]
+    net_arch:
+    - 128
+    - 128
+
+sac_params:
+  learning_rate: 0.0001
+  buffer_size: 80000
+  learning_starts: 5000
+  batch_size: 1024
+  tau: 0.005
+  gamma: 0.99
+  train_freq: 1
+  gradient_steps: 10
+  optimize_memory_usage: false
+
+  ent_coef: "auto"
+  target_update_interval: 1
+  target_entropy: "auto"
+
+  use_sde: false
+  sde_sample_freq: -1
+  use_sde_at_warmup: false
+
+  stats_window_size: 200
+  verbose: 1
+  seed: null
+  device: "cuda"
+  _init_setup_model: true
+
+  policy_kwargs:
+    net_arch:
+      pi: [512, 512]
+      qf: [512, 512]
+    share_features_extractor: false
 
 callbacks:
   - type: "checkpoint"                         # Checkpoint callback type
@@ -114,9 +147,9 @@ callbacks:
 reward_config:
   altitude:                        # Mode
     alt_w: 4                       # Weight for altitude error
-    xy_w:  3                       # Weight for XY position error
-    velN_w: 1                      # Weight for North velocity err
-    velE_w: 1                      # Weight for East velocity err
+    xy_w:  4                       # Weight for XY position error
+    velN_w: 1.5                      # Weight for North velocity err
+    velE_w: 1.5                     # Weight for East velocity err
     velZ_w: 1                      # Weight for Down velocity err
     accN_w: 1                      # Weight for North acceleration err
     accE_w: 1                      # Weight for East acceleration err
@@ -130,15 +163,16 @@ reward_config:
     crash_penalty_far:  -20                      # Penalty for crashes
     step_reward: 100                            # Penalty for crashes
     tolerance: 
-      xy_tol: 3.0           # cm
+      xy_tol: 1.0           # cm
       alt_tol: 0.03         #
-      vel_n_tol: 2.0        #  ?
-      vel_e_tol: 2.0        #  ?
+      vel_n_tol: 1.0        #  ?
+      vel_e_tol: 1.0        #  ?
       vel_d_tol: 3.0        #  ?
       acc_n_tol: 0.5        #  ? 
-      acc_e_tol: 0.003      #  ? 
+      acc_e_tol: 0.5      #  ? 
       acc_yaw_tol: 0.002    #  ? 
       acc_d_tol: 8.8        #  ? 
+
 
 
 drone_config:
@@ -153,12 +187,12 @@ sitl_config:
   ideal_sensors: true                          # Use ideal sensor models
   count: null                                  # Number of vehicle instances
   location: null                               # Home location: [lat, lon, alt, yaw]
-  speedup: 25                                   # Simulation speed multiplier
+  speedup: 30                                   # Simulation speed multiplier
   wipe_eeprom: true                            # Clear EEPROM on startup
   use_dir: null                                # Custom directory for SITL
   delay_start: null                            # Startup delay in seconds
   model: "JSON"                                # Vehicle model format
-  clean: true                                  # Clean build before starting
+  clean: false                                  # Clean build before starting
   no_rebuild: true                             # Skip rebuilding
   no_configure: true                           # Skip configuration
   no_mavproxy: true                           # Launch MAVProxy

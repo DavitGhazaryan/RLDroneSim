@@ -84,19 +84,145 @@ def demonstrate_observation_action_format(env):
     for key, idx in action_mapping.items():
         print(f"   action[{idx}] = {key} adjustment = {sample_action[idx]:.3f}")
 
-def evaluate_agent(model, env, num_episodes, gamma=0.99, verbose=False):
+# def evaluate_agent(model, env, num_episodes, gamma=0.99, verbose=False):
+#     """
+#     Evaluate the trained agent.
+    
+#     Args:
+#         model: Trained model, if none then evaluate the baseline fixed PID
+#         env: Modified ArdupilotEnv
+#         num_episodes: Number of evaluation episodes
+#         gamma: Discount factor
+        
+#     Returns:
+#         Evaluation results
+#     """
+
+#     episode_rewards = []
+#     episode_lengths = []
+
+#     episode_z_errors = []
+#     episode_x_errors = []
+#     episode_y_errors = []
+    
+#     obs = env.reset()
+    
+#     for episode in range(num_episodes):       
+
+#         episode_return = 0.0
+#         episode_discounted_return = 0.0
+#         episode_length = 0
+
+#         sum_z_error = 0.0
+#         sum_x_error = 0.0
+#         sum_y_error = 0.0
+
+#         print()
+#         print(f"Episode {episode + 1}:")
+
+#         while True:
+#             if model:
+#                 action, _ = model.predict(obs, deterministic=True)
+#             else:
+#                 action = env.action_space.sample()  
+#                 action = action * 0
+#                 action = [action]
+
+#             obs, reward, done, info = env.step(action)
+
+#             # Errors are already calculated in BaseEnv.step()
+#             # and passed through the info dictionary.
+#             alt_err = info[0].get("alt_err", 0.0)
+#             x_err = info[0].get("x_err", 0.0)
+#             y_err = info[0].get("y_err", 0.0)
+
+#             sum_z_error += abs(alt_err)
+#             sum_x_error += abs(x_err)
+#             sum_y_error += abs(y_err)
+            
+#             episode_length += 1            
+#             episode_return += reward
+#             episode_discounted_return += (gamma ** episode_length) * reward
+            
+#             if done and info[0]['reason']:
+#                 print(f"    {info[0]['reason']}")
+#                 break
+        
+#         episode_rewards.append(episode_return)
+#         episode_lengths.append(episode_length)
+
+#         episode_z_errors.append(sum_z_error)
+#         episode_x_errors.append(sum_x_error)
+#         episode_y_errors.append(sum_y_error)
+
+#         print()
+#         print(
+#             f"    Return: {float(episode_return):.2f}, "
+#             f"Discounted: {float(episode_discounted_return):.2f}, "
+#             f"Length: {int(episode_length)}"
+#         )
+#         print(f"    Sum Z error: {sum_z_error:.4f}")
+#         print(f"    Sum X error: {sum_x_error:.4f}")
+#         print(f"    Sum Y error: {sum_y_error:.4f}")
+
+#     avg_reward = np.mean(episode_rewards)
+#     std_reward = np.std(episode_rewards)
+#     avg_length = np.mean(episode_lengths)
+
+#     avg_z_error = np.mean(episode_z_errors)
+#     avg_x_error = np.mean(episode_x_errors)
+#     avg_y_error = np.mean(episode_y_errors)
+    
+#     print("\n📊 Evaluation Results:")
+#     print(f"   Average reward: {avg_reward:.2f} ± {std_reward:.2f}")
+#     print(f"   Average episode length: {avg_length:.1f} steps")
+#     print(f"   Success rate: {sum(1 for r in episode_rewards if r > 0) / len(episode_rewards):.1%}")
+
+#     print("\n📍 Error Summary:")
+#     print(f"   Average Z error: {avg_z_error:.4f}")
+#     print(f"   Average X error: {avg_x_error:.4f}")
+#     print(f"   Average Y error: {avg_y_error:.4f}")
+
+def evaluate_agent(
+    model,
+    env,
+    num_episodes,
+    gamma=0.99,
+    verbose=False,
+    log_pid_gains=False,
+    gain_keys=None,
+    save_dir=None,
+):
     """
     Evaluate the trained agent.
-    
+
     Args:
-        model: Trained model, if none then evaluate the baseline fixed PID
-        env: Modified ArdupilotEnv
-        num_episodes: Number of evaluation episodes
-        gamma: Discount factor
-        
+        model: Trained model, if None then evaluate the baseline fixed PID.
+        env: Modified ArdupilotEnv / VecEnv.
+        num_episodes: Number of evaluation episodes.
+        gamma: Discount factor.
+        verbose: Whether to print extra details.
+        log_pid_gains: If True, save PID gain/action logs and plots during evaluation.
+        gain_keys: List of PID gain names to log.
+        save_dir: Directory where evaluation logs/plots will be saved.
+
     Returns:
-        Evaluation results
+        Evaluation results.
     """
+    import os
+    import numpy as np
+
+    if log_pid_gains:
+        import pandas as pd
+        import matplotlib.pyplot as plt
+
+        if gain_keys is None:
+            gain_keys = []
+
+        if save_dir is None:
+            save_dir = "evaluation_logs"
+
+        os.makedirs(save_dir, exist_ok=True)
 
     episode_rewards = []
     episode_lengths = []
@@ -104,10 +230,13 @@ def evaluate_agent(model, env, num_episodes, gamma=0.99, verbose=False):
     episode_z_errors = []
     episode_x_errors = []
     episode_y_errors = []
-    
+
+    # New: store per-step evaluation logs
+    eval_logs = []
+
     obs = env.reset()
-    
-    for episode in range(num_episodes):       
+
+    for episode in range(num_episodes):
 
         episode_return = 0.0
         episode_discounted_return = 0.0
@@ -124,30 +253,63 @@ def evaluate_agent(model, env, num_episodes, gamma=0.99, verbose=False):
             if model:
                 action, _ = model.predict(obs, deterministic=True)
             else:
-                action = env.action_space.sample()  
+                action = env.action_space.sample()
                 action = action * 0
                 action = [action]
 
             obs, reward, done, info = env.step(action)
 
+            # VecEnv returns lists/arrays
+            info0 = info[0]
+
             # Errors are already calculated in BaseEnv.step()
             # and passed through the info dictionary.
-            alt_err = info[0].get("alt_err", 0.0)
-            x_err = info[0].get("x_err", 0.0)
-            y_err = info[0].get("y_err", 0.0)
+            alt_err = info0.get("alt_err", 0.0)
+            x_err = info0.get("x_err", 0.0)
+            y_err = info0.get("y_err", 0.0)
 
             sum_z_error += abs(alt_err)
             sum_x_error += abs(x_err)
             sum_y_error += abs(y_err)
-            
-            episode_length += 1            
+
+            episode_length += 1
             episode_return += reward
             episode_discounted_return += (gamma ** episode_length) * reward
-            
-            if done and info[0]['reason']:
-                print(f"    {info[0]['reason']}")
+
+            # --------------------------------------------------------
+            # New: log PID gains and actions during evaluation
+            # --------------------------------------------------------
+            if log_pid_gains:
+                reward_value = float(np.asarray(reward).reshape(-1)[0])
+                done_value = bool(np.asarray(done).reshape(-1)[0])
+
+                row = {
+                    "episode": episode,
+                    "step": episode_length,
+                    "reward": reward_value,
+                    "done": done_value,
+                    "reason": str(info0.get("reason")),
+                    "alt_err": alt_err,
+                    "x_err": x_err,
+                    "y_err": y_err,
+                }
+
+                # Current PID gain values from info dictionary
+                for gain in gain_keys:
+                    row[gain] = info0.get(gain)
+
+                # Policy action values
+                action_flat = np.asarray(action).reshape(-1)
+                for i, gain in enumerate(gain_keys):
+                    if i < len(action_flat):
+                        row[f"action_{gain}"] = float(action_flat[i])
+
+                eval_logs.append(row)
+
+            if done and info0["reason"]:
+                print(f"    {info0['reason']}")
                 break
-        
+
         episode_rewards.append(episode_return)
         episode_lengths.append(episode_length)
 
@@ -172,7 +334,7 @@ def evaluate_agent(model, env, num_episodes, gamma=0.99, verbose=False):
     avg_z_error = np.mean(episode_z_errors)
     avg_x_error = np.mean(episode_x_errors)
     avg_y_error = np.mean(episode_y_errors)
-    
+
     print("\n📊 Evaluation Results:")
     print(f"   Average reward: {avg_reward:.2f} ± {std_reward:.2f}")
     print(f"   Average episode length: {avg_length:.1f} steps")
@@ -183,6 +345,160 @@ def evaluate_agent(model, env, num_episodes, gamma=0.99, verbose=False):
     print(f"   Average X error: {avg_x_error:.4f}")
     print(f"   Average Y error: {avg_y_error:.4f}")
 
+    # ------------------------------------------------------------
+    # New: save PID gain/action logs and plots
+    # ------------------------------------------------------------
+    if log_pid_gains:
+        df = pd.DataFrame(eval_logs)
+
+        csv_path = os.path.join(save_dir, "eval_pid_gains.csv")
+        df.to_csv(csv_path, index=False)
+        print(f"\nSaved evaluation log to: {csv_path}")
+
+        if len(df) > 0:
+            df["global_step"] = range(len(df))
+
+            # Plot all PID gains together
+            plt.figure(figsize=(12, 6))
+
+            for gain in gain_keys:
+                if gain in df.columns:
+                    plt.plot(df["global_step"], df[gain], label=gain)
+
+            plt.xlabel("Evaluation step")
+            plt.ylabel("PID gain value")
+            plt.title("PID gain evolution during evaluation")
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+
+            gains_plot_path = os.path.join(save_dir, "eval_pid_gains.png")
+            plt.savefig(gains_plot_path, dpi=300)
+            plt.close()
+
+            print(f"Saved PID gain plot to: {gains_plot_path}")
+
+            # Plot all policy actions together
+            plt.figure(figsize=(12, 6))
+
+            for gain in gain_keys:
+                action_col = f"action_{gain}"
+                if action_col in df.columns:
+                    plt.plot(df["global_step"], df[action_col], label=action_col)
+
+            plt.xlabel("Evaluation step")
+            plt.ylabel("Action value")
+            plt.title("Policy action outputs during evaluation")
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+
+            actions_plot_path = os.path.join(save_dir, "eval_actions.png")
+            plt.savefig(actions_plot_path, dpi=300)
+            plt.close()
+
+            print(f"Saved action plot to: {actions_plot_path}")
+
+            # Plot each PID gain separately
+            separate_dir = os.path.join(save_dir, "gain_plots")
+            os.makedirs(separate_dir, exist_ok=True)
+
+            for gain in gain_keys:
+                if gain not in df.columns:
+                    continue
+
+                plt.figure(figsize=(10, 4))
+
+                for ep in sorted(df["episode"].unique()):
+                    ep_df = df[df["episode"] == ep]
+                    plt.plot(ep_df["step"], ep_df[gain], label=f"Episode {ep + 1}")
+
+                plt.xlabel("Evaluation step")
+                plt.ylabel(gain)
+                plt.title(f"{gain} during evaluation")
+                plt.legend()
+                plt.grid(True)
+                plt.tight_layout()
+
+                single_gain_path = os.path.join(separate_dir, f"{gain}.png")
+                plt.savefig(single_gain_path, dpi=300)
+                plt.close()
+
+            print(f"Saved separate gain plots to: {separate_dir}")
+
+            # ------------------------------------------------------------
+            # Plot Z, X, Y errors together
+            # ------------------------------------------------------------
+            plt.figure(figsize=(12, 6))
+
+            if "alt_err" in df.columns:
+                plt.plot(df["global_step"], df["alt_err"].abs(), label="Z error")
+
+            if "x_err" in df.columns:
+                plt.plot(df["global_step"], df["x_err"].abs(), label="X error")
+
+            if "y_err" in df.columns:
+                plt.plot(df["global_step"], df["y_err"].abs(), label="Y error")
+
+            plt.xlabel("Evaluation step")
+            plt.ylabel("Absolute error")
+            plt.title("Z, X, Y errors during evaluation")
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+
+            errors_plot_path = os.path.join(save_dir, "eval_errors_xyz.png")
+            plt.savefig(errors_plot_path, dpi=300)
+            plt.close()
+
+            print(f"Saved error plot to: {errors_plot_path}")
+
+            # ------------------------------------------------------------
+            # Plot Z, X, Y errors separately per episode
+            # ------------------------------------------------------------
+            error_dir = os.path.join(save_dir, "error_plots")
+            os.makedirs(error_dir, exist_ok=True)
+
+            for err_key, label in [
+                ("alt_err", "Z error"),
+                ("x_err", "X error"),
+                ("y_err", "Y error"),
+            ]:
+                if err_key not in df.columns:
+                    continue
+
+                plt.figure(figsize=(10, 4))
+
+                for ep in sorted(df["episode"].unique()):
+                    ep_df = df[df["episode"] == ep]
+                    plt.plot(ep_df["step"], ep_df[err_key].abs(), label=f"Episode {ep + 1}")
+
+                plt.xlabel("Evaluation step")
+                plt.ylabel(f"Absolute {label}")
+                plt.title(f"{label} during evaluation")
+                plt.legend()
+                plt.grid(True)
+                plt.tight_layout()
+
+                err_plot_path = os.path.join(error_dir, f"{err_key}.png")
+                plt.savefig(err_plot_path, dpi=300)
+                plt.close()
+
+            print(f"Saved separate error plots to: {error_dir}")
+
+    return {
+        "episode_rewards": episode_rewards,
+        "episode_lengths": episode_lengths,
+        "episode_z_errors": episode_z_errors,
+        "episode_x_errors": episode_x_errors,
+        "episode_y_errors": episode_y_errors,
+        "avg_reward": avg_reward,
+        "std_reward": std_reward,
+        "avg_length": avg_length,
+        "avg_z_error": avg_z_error,
+        "avg_x_error": avg_x_error,
+        "avg_y_error": avg_y_error,
+    }
 import datetime
 import json
 import subprocess

@@ -378,3 +378,6 @@ BRD_SAFETYENABLE,0      # no virtual safety switch in SITL
 
 # -------- Enable Lua Scripting -----------------
 SCR_ENABLE, 1
+
+LOG_BACKEND_TYPE,0
+LOG_DISARMED,0

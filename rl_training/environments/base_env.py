@@ -90,7 +90,7 @@ class BaseEnv:
         # print()
         # start = time.time()
         master = self.drone._get_mavlink_connection()
-        master.wait_heartbeat()
+        # master.wait_heartbeat()
         for i, var in enumerate(self.action_gains):
             self.curr_gains[var] = max(self.curr_gains[var] +  action[i], 0)
 
@@ -127,12 +127,13 @@ class BaseEnv:
             'x_err': x_err,
             'y_err': y_err
         }
+        
+        # print(reward)
+        for i, var in enumerate(self.action_gains):
+            info[var] = self.curr_gains[var]
 
         reward = self._compute_reward(messages, reason, truncated)
-        # print(reward)
-        # for i, var in enumerate(self.action_gains):
-        #     info[var] = self.curr_gains[var]
-
+        
         return observation, reward, terminated, truncated, info
 
     def _get_errors(self, messages):
