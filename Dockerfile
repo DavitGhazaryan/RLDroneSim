@@ -32,6 +32,8 @@ RUN apt-get update && apt-get install -y \
     # WSLg testing tools
     mesa-utils \
     vulkan-tools \
+    xterm \
+    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Gazebo Harmonic
@@ -120,14 +122,14 @@ ENV LD_LIBRARY_PATH=/usr/lib/wsl/lib:${LD_LIBRARY_PATH}
 
 # Install Python packages
 RUN pip3 install --upgrade pip && \
-    pip3 install numpy matplotlib==3.10.0 scipy pandas gymnasium mavproxy==1.8.71 protobuf==5.29.0 
+    pip3 install numpy matplotlib==3.10.0 scipy pandas gymnasium mavproxy==1.8.71 protobuf==3.20.0 
 
 RUN python -m pip install --upgrade --ignore-installed sympy
 
 RUN pip install stable-baselines3[extra] && \
     pip uninstall -y opencv-python && pip install -U opencv-python-headless
 
-
+RUN python3 -m pip install --force-reinstall "tensorboard==2.15.2" "protobuf==3.20.3"
     # Clock Node 
 # WORKDIR /home/pid_rl/clock_node
 # COPY clock_node/ /home/pid_rl/clock_node/
