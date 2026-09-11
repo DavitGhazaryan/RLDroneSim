@@ -21,27 +21,51 @@ class GazeboInterface:
     Initiates communication with simulator using gz transport library.
     """
 
+    # def __init__(self, config, instance, verbose):     
+    #     self._node = Node()      # gz transportation node
+    #     self._config = config
+    #     self._instance = instance
+    #     self._sdf_file = config.get('sdf_file')
+        
+    #     #  modify the sdf_file path to append _2 before .sdf
+    #     if self._instance == 2:
+    #         os.environ["GZ_PARTITION"] = "gz_i1"
+    #         if self._sdf_file.endswith('.sdf'):
+    #             self._sdf_file = self._sdf_file[:-4] + '_2.sdf'
+    #     # else:
+    #     #     os.environ["GZ_PARTITION"] = "gz_i0"
+
+    #     if self._sdf_file and not os.path.exists(self._sdf_file):
+    #         raise FileNotFoundError(f"SDF file not found: {self._sdf_file}")
+    #     print(self._sdf_file)
+    #     self._world_name = self._parse_world_name(self._sdf_file)      
+    #     print(self._world_name)  
+    #     self._process = None
     def __init__(self, config, instance, verbose):     
-        self._node = Node()      # gz transportation node
         self._config = config
+        self._verbose = verbose
         self._instance = instance
         self._sdf_file = config.get('sdf_file')
-        
-        #  modify the sdf_file path to append _2 before .sdf
-        if self._instance == 2:
-            os.environ["GZ_PARTITION"] = "gz_i1"
-            if self._sdf_file.endswith('.sdf'):
-                self._sdf_file = self._sdf_file[:-4] + '_2.sdf'
-        # else:
-        #     os.environ["GZ_PARTITION"] = "gz_i0"
+
+        # Modify the sdf_file path for multi-instance runs.
+        # instance 1 -> simple_world.sdf
+        # instance 2 -> simple_world_2.sdf
+        # instance 3 -> simple_world_3.sdf
+        # ...
+        if self._instance is not None and self._instance > 1:
+            if self._sdf_file and self._sdf_file.endswith('.sdf'):
+                self._sdf_file = self._sdf_file[:-4] + f'_{self._instance}.sdf'
 
         if self._sdf_file and not os.path.exists(self._sdf_file):
             raise FileNotFoundError(f"SDF file not found: {self._sdf_file}")
-        print(self._sdf_file)
-        self._world_name = self._parse_world_name(self._sdf_file)      
-        print(self._world_name)  
-        self._process = None
 
+        print(self._sdf_file)
+
+        self._world_name = self._parse_world_name(self._sdf_file)
+        print(self._world_name)
+
+        self._node = Node()
+        self._process = None
     def start_simulation(self):
         if self._process is not None and self._process.poll() is None:
             raise RuntimeError("Gazebo simulation already running")
@@ -67,7 +91,7 @@ class GazeboInterface:
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                start_new_session=False,
+                start_new_session=True,
                 env=env
                 )
 

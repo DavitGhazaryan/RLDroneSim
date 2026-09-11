@@ -27,6 +27,7 @@ services:
 
       - ./copied/simple_world.sdf:/home/pid_rl/ardupilot_gazebo/worlds/simple_world.sdf
       - ./copied/simple_world_2.sdf:/home/pid_rl/ardupilot_gazebo/worlds/simple_world_2.sdf
+      - ./copied/simple_world_3.sdf:/home/pid_rl/ardupilot_gazebo/worlds/simple_world_3.sdf
       - ./copied/f450_world.sdf:/home/pid_rl/ardupilot_gazebo/worlds/f450_world.sdf
       - ./copied/f450:/home/pid_rl/ardupilot_gazebo/models/f450
       - ./copied/f450_ardupilot:/home/pid_rl/ardupilot_gazebo/models/f450_ardupilot

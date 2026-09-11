@@ -43,59 +43,113 @@ class Drone:
             float(msg_id), float(interval_us), 0, 0, 0, 0, 0)
         master.recv_match(type="COMMAND_ACK", blocking=True, timeout=0.5)      
 
-    def set_param_and_confirm(self, name_str, value, timeout=6.0):
+    
+    def set_param_and_confirm(self, name_str, value, timeout=3.0, resend_every=0.5):
         """
-        Sets the parameter and waits for the acknowledgement message.
-        """
-        name_bytes = name_str.encode("ascii", "ignore")
-        is_float = isinstance(value, float)
-        ptype = (mavutil.mavlink.MAV_PARAM_TYPE_REAL32
-                if is_float else mavutil.mavlink.MAV_PARAM_TYPE_INT32)
+        Set an ArduPilot parameter and wait until the matching PARAM_VALUE is received.
 
-        self._mavlink_master.mav.param_set_send(self._mavlink_master.target_system, self._mavlink_master.target_component,
-                                name_bytes, float(value), ptype)
+        Unrelated PARAM_VALUE messages are ignored silently.
+        This avoids huge logs and prevents training slowdown.
+        """
+        name16 = name_str[:16]
+        name_bytes = name16.encode("ascii", "ignore")
+        target_value = float(value)
+
+        ptype = mavutil.mavlink.MAV_PARAM_TYPE_REAL32
+
         t0 = time.time()
+        last_send = 0.0
+
         while time.time() - t0 < timeout:
-            msg = self._mavlink_master.recv_match(type="PARAM_VALUE", blocking=True, timeout=timeout)
-            if not msg:
-                print("msg missed in set")
+            now = time.time()
+
+            if now - last_send >= resend_every:
+                self._mavlink_master.mav.param_set_send(
+                    self._mavlink_master.target_system,
+                    self._mavlink_master.target_component,
+                    name_bytes,
+                    target_value,
+                    ptype
+                )
+                last_send = now
+
+            msg = self._mavlink_master.recv_match(
+                type="PARAM_VALUE",
+                blocking=True,
+                timeout=0.2
+            )
+
+            if msg is None:
                 continue
-            pid = (msg.param_id.decode("ascii","ignore") if isinstance(msg.param_id,(bytes,bytearray))
-                else str(msg.param_id)).rstrip("\x00")
-            if pid == name_str:
-                if abs(float(msg.param_value) - float(value)) <= 0.01:
-                    return True  # confirmed exact (within tol)
-                else:
-                    print("Param is not set correctly")
-                    print(msg)
+
+            pid = (
+                msg.param_id.decode("ascii", "ignore")
+                if isinstance(msg.param_id, (bytes, bytearray))
+                else str(msg.param_id)
+            ).rstrip("\x00")
+
+            if pid != name16:
+                continue
+
+            received_value = float(msg.param_value)
+
+            if abs(received_value - target_value) <= 0.01:
                 return True
-            else: 
-                print(f"another one was requested here {pid} , {name_str}")
-        print(f"Param {name_str} is NOT SET")
+
+            if getattr(self, "_verbose", False):
+                print(
+                    f"Param {name16} value mismatch: "
+                    f"requested={target_value}, received={received_value}"
+                )
+
+        if getattr(self, "_verbose", False):
+            print(f"Warning: Param {name16} was not confirmed within {timeout} seconds")
+
         return False
 
+
     def get_param(self, param_name, timeout=3.0, resend_every=0.5):
-        name16 = param_name[:16]  # enforce MAVLink 16-char limit
+        """
+        Request an ArduPilot parameter and return its value.
+
+        Unrelated PARAM_VALUE messages are ignored silently.
+        """
+        name16 = param_name[:16]
         name_bytes = name16.encode("ascii", "ignore")
+
         t0 = time.time()
-        last = 0.0
-        # print(f"REquested {name16}")
+        last_send = 0.0
+
         while time.time() - t0 < timeout:
-            if time.time() - last >= resend_every:
-                self._mavlink_master.mav.param_request_read_send(self._mavlink_master.target_system, self._mavlink_master.target_component, name_bytes, -1)
-                last = time.time()
-            msg = self._mavlink_master.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.5)
-            if not msg:
-                print("msg missed in get")
+            now = time.time()
+
+            if now - last_send >= resend_every:
+                self._mavlink_master.mav.param_request_read_send(
+                    self._mavlink_master.target_system,
+                    self._mavlink_master.target_component,
+                    name_bytes,
+                    -1
+                )
+                last_send = now
+
+            msg = self._mavlink_master.recv_match(
+                type="PARAM_VALUE",
+                blocking=True,
+                timeout=0.2
+            )
+
+            if msg is None:
                 continue
-            pid = (msg.param_id.decode("ascii", "ignore") if isinstance(msg.param_id, (bytes, bytearray))
-                else str(msg.param_id)).rstrip("\x00")
+
+            pid = (
+                msg.param_id.decode("ascii", "ignore")
+                if isinstance(msg.param_id, (bytes, bytearray))
+                else str(msg.param_id)
+            ).rstrip("\x00")
+
             if pid == name16:
                 return msg.param_value
-            else:
-                print(f"another one was requested here {pid}, {name16}")
-                print(msg)
-            
+
         raise TimeoutError(f"Timeout: param {param_name} not received")
 
     def get_mode(self) -> Optional[str]:

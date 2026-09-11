@@ -88,7 +88,7 @@ class ArduPilotSITL(Drone):
         cmd = self._build_command()
         print(cmd)
         self.process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=False,
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
             cwd=str(self.ardupilot_path),
         )
         self._wait_for_startup()      # ensures that the process is running and the port(s) are available
@@ -155,8 +155,10 @@ class ArduPilotSITL(Drone):
         if self.ideal_sensors:
             cmd.append(f'--add-param-file=/home/pid_rl/rl_training/configs/ideal_sensors.param')
 
-        if self.instance == 2:
-            self.master_port += 10
+        # if self.instance == 2:
+        #     self.master_port += 10
+        if self.instance is not None:
+            self.master_port += 10 * (self.instance - 1)
         return cmd
 
     def _wait_for_startup(self):

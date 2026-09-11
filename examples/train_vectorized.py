@@ -247,26 +247,49 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
         else:
             raise ValueError(f"Unsupported algorithm: {algo}")
 
+    # callbacks = []
+    # for callback_config in callbacks_config:
+    #     if callback_config.get('type') == 'checkpoint':
+    #         if run_dirs and 'models_dir' in run_dirs:
+    #             save_path = run_dirs['models_dir']
+    #         checkpoint_callback = CheckpointCallback(
+    #             save_freq=callback_config.get('save_freq'),
+    #             save_path=save_path,
+    #             name_prefix=algo,
+    #             save_replay_buffer=(algo in off_policy_algos),
+    #             save_vecnormalize=True
+    #         )
+    #         callbacks.append(checkpoint_callback)
+
+    #     elif callback_config.get('type') == 'tensorboard':
+    #         gain_keys = config.get('environment_config', {}).get('action_gains', "").split('+')
+    #         tb_callback = TensorboardCallback(log_action_stats=True, log_gain_keys=gain_keys)
+    #         callbacks.append(tb_callback)
+
     callbacks = []
+
     for callback_config in callbacks_config:
         if callback_config.get('type') == 'checkpoint':
             if run_dirs and 'models_dir' in run_dirs:
                 save_path = run_dirs['models_dir']
+
             checkpoint_callback = CheckpointCallback(
                 save_freq=callback_config.get('save_freq'),
                 save_path=save_path,
                 name_prefix=algo,
-                save_replay_buffer=(algo in off_policy_algos),
+                save_replay_buffer=callback_config.get('save_replay_buffer', False),
                 save_vecnormalize=True
             )
+
             callbacks.append(checkpoint_callback)
 
         elif callback_config.get('type') == 'tensorboard':
             gain_keys = config.get('environment_config', {}).get('action_gains', "").split('+')
-            tb_callback = TensorboardCallback(log_action_stats=True, log_gain_keys=gain_keys)
+            tb_callback = TensorboardCallback(
+                log_action_stats=True,
+                log_gain_keys=gain_keys
+            )
             callbacks.append(tb_callback)
-
-
     reset_flag = training_config.get('reset_num_timesteps')
     if not reset_flag and checkpoint:
         reset_flag = False
@@ -288,15 +311,54 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
 def main():
     import argparse
     parser = argparse.ArgumentParser()
+    # parser.add_argument("instance", nargs="?", type=int, default=1)
+    # parser.add_argument("--checkpoint", type=str, default=None,
+    #                     help="Path to model .zip OR a directory/file inside an existing run to resume.")
+    # parser.add_argument("--newconfig", type=bool, default=False,
+    #                     help="use the new default_config.yaml for training.")
     parser.add_argument("instance", nargs="?", type=int, default=1)
-    parser.add_argument("--checkpoint", type=str, default=None,
-                        help="Path to model .zip OR a directory/file inside an existing run to resume.")
-    parser.add_argument("--newconfig", type=bool, default=False,
-                        help="use the new default_config.yaml for training.")
+
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Path to model .zip OR a directory/file inside an existing run to resume."
+    )
+
+    parser.add_argument(
+        "--newconfig",
+        action="store_true",
+        help="Use the current default_config.yaml for training even when resuming."
+    )
+
+    parser.add_argument(
+        "--algo",
+        type=str,
+        choices=["td3", "sac", "ppo", "ddpg"],
+        default=None,
+        help="Override algorithm from config."
+    )
+
+    parser.add_argument(
+        "--total_timesteps",
+        type=int,
+        default=None,
+        help="Override total_timesteps from config."
+    )
+
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to config YAML file."
+    )
     args = parser.parse_args()
 
-    if args.instance not in (1, 2):
-        print("Error: argument must be 1 or 2.")
+    # if args.instance not in (1, 2):
+    #     print("Error: argument must be 1 or 2.")
+    #     sys.exit(1)
+    if args.instance < 1:
+        print("Error: instance must be >= 1.")
         sys.exit(1)
 
     instance = args.instance
@@ -305,13 +367,24 @@ def main():
     print()
     print(f"Using value: {instance}")
 
-    if not checkpoint or new_config:
+    # if not checkpoint or new_config:
+    #     config_path = '/home/pid_rl/rl_training/configs/default_config.yaml'
+    # else:
+    #     config_path = _get_config(checkpoint)
+    if args.config:
+        config_path = args.config
+    elif not checkpoint or new_config:
         config_path = '/home/pid_rl/rl_training/configs/default_config.yaml'
     else:
         config_path = _get_config(checkpoint)
 
     try:
         config = load_config(config_path)
+        if args.algo is not None:
+            config["training_config"]["algo"] = args.algo
+
+        if args.total_timesteps is not None:
+            config["training_config"]["total_timesteps"] = args.total_timesteps
 
         def make_env():
             return Monitor(SimGymEnv(config, instance=instance))        
