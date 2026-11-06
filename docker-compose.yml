@@ -11,6 +11,7 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
       - GZ_VERSION=harmonic
+      - SITL_RITW_TERMINAL=bash
     privileged: true
     cap_add:
       - ALL
