@@ -75,3 +75,4 @@ logs/
 # Temporary files
 *.tmp
 *.temp
+rl_training/evaluation_results/

@@ -499,6 +499,238 @@ def evaluate_agent(
         "avg_x_error": avg_x_error,
         "avg_y_error": avg_y_error,
     }
+
+def evaluate_agent_screening(
+    model,
+    env,
+    num_episodes,
+    gamma=0.99,
+    verbose=False,
+    episode_seeds=None,
+    progress_every=25,
+):
+    """
+    Lightweight evaluation used for systematic checkpoint screening.
+
+    Returns per-episode and aggregate control-performance metrics.
+    Does not generate plots or PID logs.
+    """
+
+    import numpy as np
+
+    episode_results = []
+
+    # obs = env.reset()
+
+    for episode in range(num_episodes):
+
+        if episode_seeds is not None:
+            env.seed(episode_seeds[episode])
+
+        if verbose:
+            print(
+                f"   ▶ Starting evaluation episode "
+                f"{episode + 1}/{num_episodes}",
+                flush=True,
+            )
+
+        obs = env.reset()
+
+        if verbose:
+            print(
+                f"      Environment reset completed.",
+                flush=True,
+            )
+
+        episode_return = 0.0
+
+        rewards = []
+
+        z_errors = []
+        x_errors = []
+        y_errors = []
+        xy_errors = []
+
+        discounted_return = 0.0
+        episode_length = 0
+        final_reason = None
+
+        while True:
+
+            if model is not None:
+                action, _ = model.predict(
+                    obs,
+                    deterministic=True
+                )
+            else:
+                action = env.action_space.sample()
+                action = action * 0
+                action = [action]
+
+            obs, reward, done, info = env.step(action)
+
+            info0 = info[0]
+
+            reward_value = float(
+                np.asarray(reward).reshape(-1)[0]
+            )
+
+            done_value = bool(
+                np.asarray(done).reshape(-1)[0]
+            )
+
+            alt_err = float(info0.get("alt_err", 0.0))
+            x_err = float(info0.get("x_err", 0.0))
+            y_err = float(info0.get("y_err", 0.0))
+
+            xy_err = np.sqrt(
+                x_err ** 2 + y_err ** 2
+            )
+
+            rewards.append(reward_value)
+
+            z_errors.append(abs(alt_err))
+            x_errors.append(abs(x_err))
+            y_errors.append(abs(y_err))
+            xy_errors.append(xy_err)
+
+            if verbose and episode_length % progress_every == 0:
+
+                partial_reward = float(np.sum(rewards))
+
+                partial_z_mae = float(np.mean(z_errors))
+                partial_x_mae = float(np.mean(x_errors))
+                partial_y_mae = float(np.mean(y_errors))
+                partial_xy_mae = float(np.mean(xy_errors))
+
+                print(
+                    f"      Episode {episode + 1}/{num_episodes} | "
+                    f"step {episode_length} | "
+                    f"reward={partial_reward:.2f} | "
+                    f"Z MAE={partial_z_mae:.4f} | "
+                    f"X MAE={partial_x_mae:.4f} | "
+                    f"Y MAE={partial_y_mae:.4f} | "
+                    f"XY MAE={partial_xy_mae:.4f}",
+                    flush=True,
+                )
+
+            discounted_return += (
+                gamma ** episode_length
+            ) * reward_value
+
+            episode_length += 1
+
+            if done_value:
+                final_reason = info0.get("reason")
+                break
+
+        result = {
+            "episode": episode + 1,
+
+            "return": float(np.sum(rewards)),
+            "discounted_return": float(discounted_return),
+            "length": int(episode_length),
+
+            "z_mae": float(np.mean(z_errors)),
+            "x_mae": float(np.mean(x_errors)),
+            "y_mae": float(np.mean(y_errors)),
+            "xy_mae": float(np.mean(xy_errors)),
+
+            "z_rmse": float(
+                np.sqrt(np.mean(np.square(z_errors)))
+            ),
+
+            "x_rmse": float(
+                np.sqrt(np.mean(np.square(x_errors)))
+            ),
+
+            "y_rmse": float(
+                np.sqrt(np.mean(np.square(y_errors)))
+            ),
+
+            "xy_rmse": float(
+                np.sqrt(np.mean(np.square(xy_errors)))
+            ),
+
+            "max_z_error": float(np.max(z_errors)),
+            "max_x_error": float(np.max(x_errors)),
+            "max_y_error": float(np.max(y_errors)),
+            "max_xy_error": float(np.max(xy_errors)),
+
+            "reason": str(final_reason),
+        }
+
+        episode_results.append(result)
+
+        if verbose:
+            print(
+                f"Episode {episode + 1}: "
+                f"return={result['return']:.2f}, "
+                f"Z MAE={result['z_mae']:.4f}, "
+                f"XY MAE={result['xy_mae']:.4f}, "
+                f"length={result['length']}"
+            )
+
+    def avg(key):
+        return float(
+            np.mean([r[key] for r in episode_results])
+        )
+
+    def std(key):
+        return float(
+            np.std([r[key] for r in episode_results])
+        )
+
+    summary = {
+        "num_episodes": num_episodes,
+
+        "avg_reward": avg("return"),
+        "std_reward": std("return"),
+
+        "avg_length": avg("length"),
+        "std_length": std("length"),
+
+        "z_mae": avg("z_mae"),
+        "x_mae": avg("x_mae"),
+        "y_mae": avg("y_mae"),
+        "xy_mae": avg("xy_mae"),
+
+        "z_rmse": avg("z_rmse"),
+        "x_rmse": avg("x_rmse"),
+        "y_rmse": avg("y_rmse"),
+        "xy_rmse": avg("xy_rmse"),
+
+        "max_z_error": max(
+            r["max_z_error"]
+            for r in episode_results
+        ),
+
+        "max_x_error": max(
+            r["max_x_error"]
+            for r in episode_results
+        ),
+
+        "max_y_error": max(
+            r["max_y_error"]
+            for r in episode_results
+        ),
+
+        "max_xy_error": max(
+            r["max_xy_error"]
+            for r in episode_results
+        ),
+
+        "termination_reasons": [
+            r["reason"]
+            for r in episode_results
+        ],
+    }
+
+    return {
+        "summary": summary,
+        "episodes": episode_results,
+    }
+
 import datetime
 import json
 import subprocess

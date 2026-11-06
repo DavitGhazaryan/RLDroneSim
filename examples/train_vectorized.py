@@ -5,7 +5,7 @@ sys.path.insert(0, "/home/pid_rl")
 
 from rl_training.environments import SimGymEnv
 from rl_training.utils.utils import load_config
-from stable_baselines3.common.callbacks import CheckpointCallback       # type: ignore
+from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
 from stable_baselines3.common.monitor import Monitor                    # type: ignore
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize  # type: ignore
 
@@ -13,6 +13,120 @@ from rl_training.utils.tb_callback import TensorboardCallback
 from rl_training.utils.utils import create_run_dir, save_config_copy, save_git_info, create_action_noise_from_config, _extract_steps, _replay_for, _get_config, _vecnormalize_for
 import os
 import re 
+
+import random
+import numpy as np
+import torch
+
+from pathlib import Path
+from datetime import datetime
+
+
+class BestTrainingRewardCallback(BaseCallback):
+    """
+    Saves the model whenever the mean episode reward improves.
+
+    This uses SB3's ep_info_buffer, which is populated when the environment
+    is wrapped with Monitor.
+    """
+
+    def __init__(self, check_freq, save_path, window_size=5, verbose=1):
+        super().__init__(verbose)
+        self.check_freq = check_freq
+        self.save_path = save_path
+        self.window_size = window_size
+        self.best_mean_reward = -np.inf
+
+    def _init_callback(self):
+        os.makedirs(self.save_path, exist_ok=True)
+
+    def _on_step(self):
+        if self.n_calls % self.check_freq != 0:
+            return True
+
+        if len(self.model.ep_info_buffer) == 0:
+            return True
+
+        recent_rewards = [
+            ep_info["r"]
+            for ep_info in list(self.model.ep_info_buffer)[-self.window_size:]
+            if "r" in ep_info
+        ]
+
+        if len(recent_rewards) == 0:
+            return True
+
+        mean_reward = float(np.mean(recent_rewards))
+
+        if mean_reward > self.best_mean_reward:
+            self.best_mean_reward = mean_reward
+
+            model_path = os.path.join(self.save_path, "best_model")
+            self.model.save(model_path)
+
+            vec_env = self.model.get_vec_normalize_env()
+            if vec_env is not None:
+                vec_env.save(os.path.join(self.save_path, "best_vecnormalize.pkl"))
+
+            with open(os.path.join(self.save_path, "best_model_info.txt"), "w") as f:
+                f.write(f"best_mean_reward: {self.best_mean_reward}\n")
+                f.write(f"num_timesteps: {self.num_timesteps}\n")
+                f.write(f"window_size: {self.window_size}\n")
+
+            if self.verbose > 0:
+                print(
+                    f"✅ New best model saved at {self.num_timesteps} steps "
+                    f"with mean reward {self.best_mean_reward:.3f}"
+                )
+
+        return True
+    
+class LatestReplayBufferCallback(BaseCallback):
+    """
+    Saves only the latest replay buffer for off-policy algorithms such as TD3 and SAC.
+
+    The file is overwritten each time, so we do not create huge folders with
+    replay buffers for every checkpoint.
+    """
+
+    def __init__(self, save_freq, save_path, algo, verbose=1):
+        super().__init__(verbose)
+        self.save_freq = save_freq
+        self.save_path = save_path
+        self.algo = algo
+
+    def _init_callback(self):
+        os.makedirs(self.save_path, exist_ok=True)
+
+    def _save_replay_buffer(self):
+        if not hasattr(self.model, "save_replay_buffer"):
+            return
+
+        replay_buffer_path = os.path.join(
+            self.save_path,
+            f"{self.algo}_latest_replay_buffer.pkl"
+        )
+
+        self.model.save_replay_buffer(replay_buffer_path)
+
+        with open(os.path.join(self.save_path, f"{self.algo}_latest_replay_buffer_info.txt"), "w") as f:
+            f.write(f"num_timesteps: {self.num_timesteps}\n")
+            f.write(f"replay_buffer_path: {replay_buffer_path}\n")
+
+        if self.verbose > 0:
+            print(
+                f"💾 Latest replay buffer saved at {self.num_timesteps} steps: "
+                f"{replay_buffer_path}"
+            )
+
+    def _on_step(self):
+        if self.n_calls % self.save_freq == 0:
+            self._save_replay_buffer()
+
+        return True
+
+    def _on_training_end(self):
+        self._save_replay_buffer()
 
 def save_training_parameters(config, output_path):
     """
@@ -52,6 +166,65 @@ def save_training_parameters(config, output_path):
                 file.write("\n")
 
     print(f"✅ Training parameters saved to: {output_path}")
+
+def create_grouped_experiment_run_dir(
+    runs_base,
+    algorithm,
+    mission,
+    config_path=None,
+    seed=None,
+    experiment_id=None,
+):
+    """
+    Create grouped experiment directory:
+
+    runs/hover/<config_name>_seed<seed>/
+        td3/
+            models/
+            tb/
+            logs/
+            config.yaml
+            git_info.txt
+        ppo/
+            ...
+        sac/
+            ...
+    """
+
+    config_name = Path(config_path).stem if config_path else "default_config"
+
+    if experiment_id is None:
+        if seed is not None:
+            experiment_id = f"{config_name}_seed{seed}"
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            experiment_id = f"{config_name}_{timestamp}"
+
+    experiment_dir = Path(runs_base) / mission / experiment_id
+    run_dir = experiment_dir / algorithm
+
+    # Avoid accidentally overwriting an existing run of the same algorithm.
+    if run_dir.exists() and any(run_dir.iterdir()):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_dir = experiment_dir / f"{algorithm}_{timestamp}"
+
+    models_dir = run_dir / "models"
+    tb_dir = run_dir / "tb"
+    logs_dir = run_dir / "logs"
+
+    models_dir.mkdir(parents=True, exist_ok=True)
+    tb_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    return {
+        "experiment_dir": str(experiment_dir),
+        "run_dir": str(run_dir),
+        "models_dir": str(models_dir),
+        "tb_dir": str(tb_dir),
+        "logs_dir": str(logs_dir),
+        "cfg_path": str(run_dir / "config.yaml"),
+        "git_path": str(run_dir / "git_info.txt"),
+    }
 
 def train_agent(env, config, run_dirs, checkpoint: str | None = None):
     """
@@ -123,12 +296,30 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
 
         # Replay buffers are used only by off-policy algorithms.
         if algo in off_policy_algos:
-            rb_path = _replay_for(checkpoint)
-            if rb_path:
-                print(f"🔄 Loading replay buffer: {rb_path}")
-                model.load_replay_buffer(rb_path)
+            replay_buffer_path = checkpoint.replace(".zip", "_replay_buffer.pkl")
+
+            latest_replay_buffer_path = os.path.join(
+                run_dirs["models_dir"],
+                f"{algo}_latest_replay_buffer.pkl"
+            )
+
+            if os.path.exists(replay_buffer_path):
+                print(f"Loading replay buffer: {replay_buffer_path}")
+                model.load_replay_buffer(replay_buffer_path)
+
+            elif os.path.exists(latest_replay_buffer_path):
+                print(f"Loading latest replay buffer: {latest_replay_buffer_path}")
+                model.load_replay_buffer(latest_replay_buffer_path)
+
             else:
-                print("⚠️ Replay buffer not found for this checkpoint; continuing without it.")     
+                print("⚠️ Replay buffer not found for this checkpoint; continuing without it.")
+        # if algo in off_policy_algos:
+        #     rb_path = _replay_for(checkpoint)
+        #     if rb_path:
+        #         print(f"🔄 Loading replay buffer: {rb_path}")
+        #         model.load_replay_buffer(rb_path)
+        #     else:
+        #         print("⚠️ Replay buffer not found for this checkpoint; continuing without it.")     
     else:
         policy_kwargs = algo_config['policy_kwargs']
         if algo == 'td3':
@@ -247,25 +438,7 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
         else:
             raise ValueError(f"Unsupported algorithm: {algo}")
 
-    # callbacks = []
-    # for callback_config in callbacks_config:
-    #     if callback_config.get('type') == 'checkpoint':
-    #         if run_dirs and 'models_dir' in run_dirs:
-    #             save_path = run_dirs['models_dir']
-    #         checkpoint_callback = CheckpointCallback(
-    #             save_freq=callback_config.get('save_freq'),
-    #             save_path=save_path,
-    #             name_prefix=algo,
-    #             save_replay_buffer=(algo in off_policy_algos),
-    #             save_vecnormalize=True
-    #         )
-    #         callbacks.append(checkpoint_callback)
-
-    #     elif callback_config.get('type') == 'tensorboard':
-    #         gain_keys = config.get('environment_config', {}).get('action_gains', "").split('+')
-    #         tb_callback = TensorboardCallback(log_action_stats=True, log_gain_keys=gain_keys)
-    #         callbacks.append(tb_callback)
-
+    
     callbacks = []
 
     for callback_config in callbacks_config:
@@ -283,6 +456,32 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
 
             callbacks.append(checkpoint_callback)
 
+        elif callback_config.get('type') == 'best_reward':
+            if run_dirs and 'models_dir' in run_dirs:
+                save_path = run_dirs['models_dir']
+
+            best_reward_callback = BestTrainingRewardCallback(
+                check_freq=callback_config.get('check_freq', 2000),
+                save_path=save_path,
+                window_size=callback_config.get('window_size', 5),
+                verbose=1
+            )
+
+            callbacks.append(best_reward_callback)
+
+        elif callback_config.get('type') == 'latest_replay_buffer':
+            if algo in off_policy_algos:
+                if run_dirs and 'models_dir' in run_dirs:
+                    save_path = run_dirs['models_dir']
+
+                latest_replay_callback = LatestReplayBufferCallback(
+                    save_freq=callback_config.get('save_freq', 10000),
+                    save_path=save_path,
+                    algo=algo,
+                    verbose=1
+                )
+
+                callbacks.append(latest_replay_callback)
         elif callback_config.get('type') == 'tensorboard':
             gain_keys = config.get('environment_config', {}).get('action_gains', "").split('+')
             tb_callback = TensorboardCallback(
@@ -290,10 +489,13 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
                 log_gain_keys=gain_keys
             )
             callbacks.append(tb_callback)
+
     reset_flag = training_config.get('reset_num_timesteps')
     if not reset_flag and checkpoint:
         reset_flag = False
+
     print(f"Reset flag {reset_flag}")
+
     ## Main learning code
     print("🎯 Training started...")
     model.learn(
@@ -310,12 +512,7 @@ def train_agent(env, config, run_dirs, checkpoint: str | None = None):
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser()
-    # parser.add_argument("instance", nargs="?", type=int, default=1)
-    # parser.add_argument("--checkpoint", type=str, default=None,
-    #                     help="Path to model .zip OR a directory/file inside an existing run to resume.")
-    # parser.add_argument("--newconfig", type=bool, default=False,
-    #                     help="use the new default_config.yaml for training.")
+    parser = argparse.ArgumentParser()    
     parser.add_argument("instance", nargs="?", type=int, default=1)
 
     parser.add_argument(
@@ -347,11 +544,24 @@ def main():
     )
 
     parser.add_argument(
+    "--seed",
+    type=int,
+    default=None,
+    help="Random seed for reproducible independent runs."
+    )
+    parser.add_argument(
         "--config",
         type=str,
         default=None,
         help="Path to config YAML file."
     )
+    parser.add_argument(
+        "--experiment_id",
+        type=str,
+        default=None,
+        help="Shared experiment folder name, e.g. exp_R1_baseline_seed303_20260915_1515."
+)
+
     args = parser.parse_args()
 
     # if args.instance not in (1, 2):
@@ -386,6 +596,25 @@ def main():
         if args.total_timesteps is not None:
             config["training_config"]["total_timesteps"] = args.total_timesteps
 
+        if args.seed is not None:
+            algo = config["training_config"]["algo"]
+            algo_params_key = f"{algo}_params"
+
+            if algo_params_key not in config:
+                raise KeyError(f"Could not find {algo_params_key} in config")
+
+            config[algo_params_key]["seed"] = args.seed
+            config["training_config"]["seed"] = args.seed
+
+            random.seed(args.seed)
+            np.random.seed(args.seed)
+            torch.manual_seed(args.seed)
+
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(args.seed)
+
+            print(f"Using seed: {args.seed}")
+
         def make_env():
             return Monitor(SimGymEnv(config, instance=instance))        
         dummy_vec = DummyVecEnv([make_env])
@@ -396,7 +625,7 @@ def main():
         mission = training_config.get('mission')     # hover
         runs_base = training_config.get('runs_base')
 
-        # If resuming: reuse the original run root; else create a fresh stamped run
+        
         if checkpoint:
             run_dirs = create_run_dir(runs_base, algorithm, mission, resume_from=checkpoint)
             vecnorm_path = _vecnormalize_for(checkpoint)
@@ -407,11 +636,21 @@ def main():
                 venv.training = True
                 venv.clip_obs = 10
         else:
-            run_dirs = create_run_dir(runs_base, algorithm, mission)
-            print("🆕 Fresh run:")
+            run_dirs = create_grouped_experiment_run_dir(
+                runs_base=runs_base,
+                algorithm=algorithm,
+                mission=mission,
+                config_path=config_path,
+                seed=args.seed,
+                experiment_id=args.experiment_id,
+            )
+            print("🆕 Fresh grouped experiment run:")
+
+        if "experiment_dir" in run_dirs:
+            print(f"📁 Experiment directory: {run_dirs['experiment_dir']}")
 
         print(f"📁 Run directory: {run_dirs['run_dir']}")
-
+        
         # Save config and git info only for fresh runs (avoid overwriting on resume)
         if not checkpoint:
             save_config_copy(config, run_dirs['cfg_path'])

@@ -117,12 +117,18 @@ sac_params:
     share_features_extractor: false
 
 callbacks:
-  - type: "checkpoint"                         # Checkpoint callback type
-    save_freq: 1000                            # Save frequency for checkpoints
+  - type: "checkpoint"
+    save_freq: 2000
     save_replay_buffer: false
-  - type: "tensorboard"                         # Checkpoint callback type
 
+  - type: "best_reward"
+    check_freq: 2000
+    window_size: 5
 
+  - type: "latest_replay_buffer"
+    save_freq: 10000
+
+  - type: "tensorboard"
 
 reward_config:
   altitude:
