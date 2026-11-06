@@ -138,6 +138,11 @@ RUN python3 -m pip install --force-reinstall "tensorboard==2.15.2" "protobuf==3.
 #     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && \
 #     cmake --build build -j"$(nproc)"
 
+# Apply RLDroneSim ArduPilot customization for velocity-error telemetry
+COPY --chown=ardupilot:ardupilot \
+    copied/GCS_MAVLink_Copter.cpp \
+    /home/pid_rl/ardupilot/ArduCopter/GCS_MAVLink_Copter.cpp
+    
 # Build ArduPilot SITL targets (copter)
 WORKDIR /home/pid_rl/ardupilot
 RUN  git config --global --add safe.directory /home/pid_rl/ardupilot
